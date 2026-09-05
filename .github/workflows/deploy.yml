@@ -30,7 +30,7 @@ jobs:
           # Le SHA exact qui a passé la CI, pas juste « la HEAD actuelle de
           # main » qui a pu bouger entre-temps si des pushes s'enchaînent.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
