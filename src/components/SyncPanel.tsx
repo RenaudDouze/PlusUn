@@ -176,7 +176,9 @@ export function SyncPanel({ counters, onClose, onImport, remoteSync }: SyncPanel
               <>
                 <p className="modal-hint">
                   Synchronise automatiquement tes compteurs avec un autre appareil, sans compte : génère un code sur
-                  le premier, saisis-le sur le second.
+                  le premier, saisis-le sur le second. Le code n'est pas un mot de passe : quiconque le connaît peut
+                  lire et modifier les compteurs synchronisés — évite d'y mettre des informations sensibles ou
+                  privées.
                 </p>
                 <div className="modal-row">
                   <button className="modal-btn" onClick={() => remoteSync.createCode()}>

@@ -89,6 +89,10 @@ Une seule valeur par code, sous la clé `sync:<CODE>` :
 - Un code inutilisé pendant 180 jours expire et libère sa place.
 - Aucune donnée personnelle n'est demandée : le code lui-même (8 caractères,
   ~500 milliards de combinaisons) fait office de secret partagé.
+- Aucune protection au-delà de la connaissance du code : pas de chiffrement,
+  pas d'authentification. Quiconque connaît (ou devine) un code peut lire et
+  écraser les compteurs associés — à ne pas utiliser pour des données
+  sensibles ou privées.
 
 ## Pas de limitation de débit
 
