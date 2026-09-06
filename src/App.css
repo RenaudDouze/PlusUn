@@ -981,9 +981,10 @@
   color: var(--text-dim);
 }
 
-/* Bandeau d'avertissement en tête de modale pour un compteur archivé :
-   se démarque volontairement des `.modal-hint` habituels (fond plein,
-   centré) pour se lire comme un état plutôt qu'une info secondaire. */
+/* Bandeau d'avertissement (compteur archivé en lecture seule, ou rappel que
+   la synchro n'est pas chiffrée) : se démarque volontairement des
+   `.modal-hint` habituels (fond plein, centré) pour se lire comme un état
+   plutôt qu'une info secondaire. */
 .modal-hint--locked {
   background: var(--bg-2);
   color: var(--text);

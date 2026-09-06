@@ -706,6 +706,12 @@ export default function App() {
                 <button className="add-btn large" onClick={addCounter}>
                   Créer mon premier compteur
                 </button>
+                {import.meta.env.VITE_SYNC_WORKER_URL && (
+                  <p className="modal-hint modal-hint--locked">
+                    ⚠️ Compteurs synchronisés entre appareils : le code n'est pas un mot de passe, quiconque le
+                    connaît peut les lire et les modifier — évite d'y mettre des données sensibles ou privées.
+                  </p>
+                )}
               </>
             ) : searchQuery.trim() !== '' ? (
               <p>Aucun compteur ne correspond à « {searchQuery.trim()} ».</p>

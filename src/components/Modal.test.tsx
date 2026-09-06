@@ -1,5 +1,5 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
 import { Modal } from './Modal'
 
 function renderModal(props: Partial<Parameters<typeof Modal>[0]> = {}) {
@@ -13,6 +13,21 @@ function renderModal(props: Partial<Parameters<typeof Modal>[0]> = {}) {
 }
 
 describe('Modal', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("n'affiche pas le rappel sur la synchro quand aucun worker n'est configuré", () => {
+    renderModal()
+    expect(screen.queryByText(/Compteurs synchronisés entre appareils/)).not.toBeInTheDocument()
+  })
+
+  it('affiche un rappel que la synchro entre appareils n’est pas chiffrée quand un worker est configuré', () => {
+    vi.stubEnv('VITE_SYNC_WORKER_URL', 'https://sync.example.workers.dev')
+    renderModal()
+    expect(screen.getByText(/Compteurs synchronisés entre appareils/)).toBeInTheDocument()
+  })
+
   it('affiche le titre et le contenu', () => {
     renderModal()
     expect(screen.getByText('Titre du test')).toBeInTheDocument()

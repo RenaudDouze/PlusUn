@@ -139,6 +139,17 @@ export function SyncPanel({ counters, onClose, onImport, remoteSync }: SyncPanel
           </button>
         </div>
 
+        {/* Tout en haut, visible quel que soit l'état (code déjà actif,
+            saisie en cours ou pas encore configuré) : contrairement à l'ancien
+            emplacement (dans le seul état "pas encore de code"), quelqu'un qui
+            synchronise déjà ne doit pas la manquer. */}
+        {import.meta.env.VITE_SYNC_WORKER_URL && (
+          <p className="modal-hint modal-hint--locked">
+            ⚠️ Compteurs synchronisés entre appareils : le code n'est pas un mot de passe, quiconque le connaît peut
+            les lire et les modifier — évite d'y mettre des données sensibles ou privées.
+          </p>
+        )}
+
         {import.meta.env.VITE_SYNC_WORKER_URL && (
           <section className="modal-section">
             <h3>Code de synchro</h3>
@@ -176,9 +187,7 @@ export function SyncPanel({ counters, onClose, onImport, remoteSync }: SyncPanel
               <>
                 <p className="modal-hint">
                   Synchronise automatiquement tes compteurs avec un autre appareil, sans compte : génère un code sur
-                  le premier, saisis-le sur le second. Le code n'est pas un mot de passe : quiconque le connaît peut
-                  lire et modifier les compteurs synchronisés — évite d'y mettre des informations sensibles ou
-                  privées.
+                  le premier, saisis-le sur le second.
                 </p>
                 <div className="modal-row">
                   <button className="modal-btn" onClick={() => remoteSync.createCode()}>

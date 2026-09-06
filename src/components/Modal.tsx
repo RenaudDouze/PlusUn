@@ -62,6 +62,17 @@ export function Modal({ title, onClose, accentColor, children }: ModalProps) {
           </button>
         </div>
 
+        {/* Visible sur les 3 modales du compteur (via cette coquille commune),
+            pas seulement dans le panneau Synchroniser : ce que fait la
+            synchro n'est pas forcément évident depuis une modale de compteur
+            qui n'en parle pas explicitement. */}
+        {import.meta.env.VITE_SYNC_WORKER_URL && (
+          <p className="modal-hint modal-hint--locked">
+            ⚠️ Compteurs synchronisés entre appareils : le code n'est pas un mot de passe, quiconque le connaît peut
+            les lire et les modifier — évite d'y mettre des données sensibles ou privées.
+          </p>
+        )}
+
         {children}
       </div>
     </div>,
