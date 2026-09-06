@@ -40,7 +40,9 @@ appareils (optionnelle) est le seul point qui parle au réseau.
   jusqu'à 5s, pour limiter le nombre de requêtes), avec notification quand des
   changements arrivent d'un autre appareil. Une erreur de synchro (worker
   injoignable, code expiré...) reste visible dès l'en-tête de l'app, sans avoir à
-  ouvrir la modale Synchroniser pour la découvrir.
+  ouvrir la modale Synchroniser pour la découvrir. Le code n'est pas protégé par
+  un mot de passe ni chiffré : quiconque le connaît peut lire et modifier les
+  compteurs associés, à réserver donc à des données non sensibles.
 
 **Autres**
 - Effet de défilement façon odomètre, son et retour haptique à l'incrément/
