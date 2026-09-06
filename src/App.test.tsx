@@ -84,6 +84,18 @@ describe('App', () => {
     expect(screen.getByText("Aucun compteur pour l'instant.")).toBeInTheDocument()
   })
 
+  it("n'affiche pas le rappel sur la synchro dans l'état vide quand aucun worker n'est configuré", () => {
+    render(<App />)
+    expect(screen.queryByText(/Compteurs synchronisés entre appareils/)).not.toBeInTheDocument()
+  })
+
+  it("affiche un rappel sur la synchro non chiffrée dans l'état vide quand un worker est configuré", () => {
+    vi.stubEnv('VITE_SYNC_WORKER_URL', 'https://sync.example.workers.dev')
+    render(<App />)
+    expect(screen.getByText(/Compteurs synchronisés entre appareils/)).toBeInTheDocument()
+    vi.unstubAllEnvs()
+  })
+
   it('crée un premier compteur depuis l\'état vide', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Créer mon premier compteur' }))
