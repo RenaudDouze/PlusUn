@@ -32,6 +32,46 @@ npm run deploy       # wrangler deploy (needs `wrangler login` or CI secrets —
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck, unit+coverage, e2e, mutation testing, and the worker's own typecheck+tests as separate jobs on every PR — all required for `Build de production` to run.
 
+## Features
+
+A `Counter` (`types.ts`) has an id/name/count/createdAt plus two independently-optional groups, `behavior` and `appearance` — see "`App.tsx` is the single state owner" below for why that split matters.
+
+**Counting & behavior** (`behavior`, edited from the Comportement panel, `CounterBehaviorSettingsPanel.tsx`)
+- Increment/decrement by a custom `step` (default 1), via tap/click on the card (`useTapGesture`), the +/− buttons, or arrow/+/− keys.
+- Hold-to-repeat rapid-fire on +/− (`useHoldToRepeat`), mouse/touch and keyboard (Enter/Space) alike.
+- Direct numeric edit of the current value, validated as a plain integer (with optional leading `-`).
+- Optional `target`: progress bar + confetti celebration once reached (`useCelebration`) plus a system notification.
+- Optional `oddsDenominator` ("1 chance in N", e.g. loot-drop odds): cumulative probability math in `odds.ts` (`cumulativeOdds`, `formatOdds`, remaining-attempts estimate, a "no cumulative bad luck" reminder), shown as a progress bar and on the card itself.
+- Optional `startDate` (defaults to `createdAt`): duration/average-per-day stats (`date.ts`), also computed for the whole archive (see below).
+- A counter with `archived: true` is read-only everywhere counting/renaming/dragging happens — `locked` is checked once per entry point (`CounterCard.bump`, the two settings panels) rather than disabling the state itself.
+
+**Appearance** (`appearance`, edited from the Personnalisation panel, `CounterSettingsPanel.tsx`)
+- Color from a curated 8-color palette (`colors.ts`); a new counter auto-picks the next unused one.
+- 6 display styles for the digit (`displayStyles.ts` + `CounterValueDisplay.tsx`), each with its own animation: odometer (default), flap, 7-segment, ring (uses `progressRatio` toward target or odds), editorial, badge.
+- Optional background image, restricted to http(s) URLs (`url.ts`'s `isValidImageUrl`) — rejects `data:`/`javascript:` etc. at both manual entry and import (share link/backup), since it lands directly in a CSS `background-image`.
+
+**Organization** (owned in `App.tsx`)
+- Pin (`togglePin`): stable-sorts pinned counters to the top without disturbing manual order among the rest.
+- Archive (`toggleArchive`): hides from the default view, has its own "Archivés" view with a cumulative stats bar (`archiveStats.ts`: count, total, average, median, average-per-day and average-duration — the last two `null` when no archived counter has a known `archivedAt`).
+- Discreet name search/filter (`searchQuery`), scoped to the active Actifs/Archivés view.
+- Drag-and-drop reorder (`framer-motion`'s `Reorder`) that can operate on a filtered subset — `reorder.ts`'s `mergeVisibleOrder` splices the new order back into the full list, leaving hidden counters' positions untouched. Keyboard equivalent: arrow keys on the drag handle (`moveCounter`), with an `aria-live` announcement since a successful reorder is otherwise only visible on screen.
+
+**One-shot transfer** (`sync.ts`, `share.ts`, `shareCard.ts` — no network beyond copying a link/file)
+- Share link or QR code: counters compressed (`lz-string`) into a compact positional format (`toCompact`/`fromCompact`) embedded in a URL param, decoded back on load (`decodeCountersFromParam`); a legacy uncompressed base64 format is still decodable. Importing offers replace-or-merge when counters already exist locally.
+- JSON backup file: full-fidelity export/import (`downloadBackup`/`parseBackupJson`), tolerant of both the current nested `behavior`/`appearance` shape and the older flat one.
+- Per-counter share: plain text summary (`buildShareText`, name/value/odds/start date) via the Web Share API or clipboard fallback; or a generated PNG card (`shareCard.ts` — builds an SVG, rasterizes it via `<canvas>` at 2x for sharp export) shared as a file or downloaded.
+
+**Background sync** (optional, see "Remote sync protocol" below) — automatic, code-based sync between devices via the Cloudflare Worker.
+
+**PWA & platform**
+- Installable manifest with two app shortcuts (`vite.config.ts`, `?action=new|sync` read once on load in `App.tsx`), offline-capable via `vite-plugin-pwa`'s auto-updating service worker.
+- Theme: system/light/dark, cycled from one button, persisted, applied as `data-theme` plus a matching `theme-color` meta tag.
+- Focus mode (hides the header/chrome without native fullscreen) and native device fullscreen (`requestFullscreen`) — independent toggles, combinable.
+- Optional system notifications (`notifications.ts`) for goal-reached and incoming-sync-update events, sent only when the tab isn't already visible (the in-app toast covers that case) and via the service worker registration when available (required by some mobile browsers for an installed PWA).
+- Sound (`sound.ts`) and haptic vibration feedback on increment/decrement.
+- Multi-level undo: a LIFO stack of full `Counter[]` snapshots (`App.tsx`'s `undoStack`), each destructive action pushes one, a single shared timeout extends on every new action.
+- Accessibility: focus trap + Escape-to-close on every modal (`useFocusTrap`), `aria-live` regions for silent state changes (odometer digits, reorder), full keyboard equivalents for drag-and-drop and hold-to-repeat.
+
 ## Architecture
 
 ### Local-first, sync is optional
