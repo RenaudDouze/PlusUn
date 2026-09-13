@@ -110,14 +110,20 @@ async function handleGet(env: Env, code: string): Promise<Response> {
 }
 
 async function handlePut(request: Request, env: Env, code: string): Promise<Response> {
-  const contentLength = Number(request.headers.get('content-length') ?? '0')
-  if (contentLength > MAX_BODY_BYTES) {
+  // Lit le corps réel plutôt que de se fier à l'en-tête `Content-Length`
+  // déclaré par le client : rien ne garantit qu'il corresponde à la taille
+  // effectivement envoyée (en-tête absent ou mensonger, encodage chunked qui
+  // s'en passe totalement) — un client pouvait ainsi contourner totalement
+  // cette limite et faire stocker en KV un blob arbitrairement plus gros que
+  // `MAX_BODY_BYTES`.
+  const body = await request.arrayBuffer()
+  if (body.byteLength > MAX_BODY_BYTES) {
     return json({ error: 'Trop volumineux.' }, { status: 413 }, env)
   }
 
   let payload: unknown
   try {
-    payload = await request.json()
+    payload = JSON.parse(new TextDecoder().decode(body))
   } catch {
     return json({ error: 'JSON invalide.' }, { status: 400 }, env)
   }

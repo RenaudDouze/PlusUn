@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildShareUrl, decodeCountersFromParam, downloadBackup, encodeCountersToParam, parseBackupJson } from './sync'
+import {
+  buildShareUrl,
+  decodeCountersFromParam,
+  downloadBackup,
+  encodeCountersToParam,
+  parseBackupJson,
+  sanitizeSyncedCounters,
+} from './sync'
 import type { Counter, CounterAppearance, CounterBehavior } from './types'
 
 /** Générateur déterministe (même seed = même résultat) à forte entropie. */
@@ -298,6 +305,118 @@ describe('parseBackupJson', () => {
   it("laisse archivedAt indéfini s'il n'est pas un nombre (payload corrompu)", () => {
     const result = parseBackupJson(JSON.stringify([{ name: 'A', count: 1, archivedAt: 'hier' }]))
     expect(result?.[0].archivedAt).toBeUndefined()
+  })
+})
+
+describe('sanitizeSyncedCounters', () => {
+  // Contrairement à parseBackupJson/decodeCountersFromParam (données qu'on a
+  // soi-même exportées ou reçues via un lien qu'on a choisi d'ouvrir), le
+  // code de synchro n'authentifie aucun appareil en particulier : n'importe
+  // qui le connaît a pu pousser n'importe quel JSON (voir
+  // worker/src/index.ts, isValidPushRequest ne vérifie que la forme du
+  // tableau). Ces tests vérifient qu'un compteur malformé reçu par ce canal
+  // ne fait jamais planter le rendu (voir CounterBehaviorSettingsPanel.tsx,
+  // `counter.count.toString()`, et date.ts, `Intl.DateTimeFormat.format` sur
+  // un `Invalid Date`), au lieu de simplement filtrer comme parseBackupJson.
+
+  it('retourne [] pour une valeur qui n\'est pas un tableau', () => {
+    expect(sanitizeSyncedCounters('pas-un-tableau')).toEqual([])
+    expect(sanitizeSyncedCounters(null)).toEqual([])
+    expect(sanitizeSyncedCounters(undefined)).toEqual([])
+    expect(sanitizeSyncedCounters({ 0: 'x' })).toEqual([])
+  })
+
+  it('retourne [] pour un tableau vide', () => {
+    expect(sanitizeSyncedCounters([])).toEqual([])
+  })
+
+  it('ignore les éléments qui ne sont pas des objets', () => {
+    const result = sanitizeSyncedCounters([null, 42, 'texte', { name: 'Valide', count: 1 }])
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('Valide')
+  })
+
+  it('préserve un compteur déjà bien formé tel quel (id compris)', () => {
+    const counter = makeCounter({ id: 'id-stable', name: 'Complet', count: 7 })
+    const result = sanitizeSyncedCounters([counter])
+    expect(result[0]).toEqual(counter)
+  })
+
+  it("préserve l'id fourni (contrairement à normalizeCounter, qui en régénère un)", () => {
+    const result = sanitizeSyncedCounters([{ id: 'gardé', name: 'A', count: 1 }])
+    expect(result[0].id).toBe('gardé')
+  })
+
+  it("génère un id de secours si absent ou vide (évite une clé React dupliquée/vide)", () => {
+    const result = sanitizeSyncedCounters([{ name: 'A', count: 1 }, { id: '', name: 'B', count: 2 }])
+    expect(result[0].id).toBeTruthy()
+    expect(result[1].id).toBeTruthy()
+  })
+
+  it('retombe sur count=0 si absent ou non numérique (évite un `.toString()` sur undefined)', () => {
+    const result = sanitizeSyncedCounters([
+      { id: 'a', name: 'Sans count' },
+      { id: 'b', name: 'Count texte', count: 'douze' },
+      { id: 'c', name: 'Count NaN', count: NaN },
+    ])
+    expect(result.map((c) => c.count)).toEqual([0, 0, 0])
+  })
+
+  it('conserve un count à 0 ou négatif', () => {
+    const result = sanitizeSyncedCounters([
+      { id: 'a', name: 'Zéro', count: 0 },
+      { id: 'b', name: 'Négatif', count: -3 },
+    ])
+    expect(result.map((c) => c.count)).toEqual([0, -3])
+  })
+
+  it('retombe sur "Sans nom" si le nom est absent ou non textuel', () => {
+    const result = sanitizeSyncedCounters([{ id: 'a', count: 1 }, { id: 'b', name: 42, count: 1 }])
+    expect(result.map((c) => c.name)).toEqual(['Sans nom', 'Sans nom'])
+  })
+
+  it('retombe sur Date.now() si createdAt est absent ou non numérique', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 22))
+    const result = sanitizeSyncedCounters([{ id: 'a', name: 'A', count: 1, createdAt: 'hier' }])
+    expect(result[0].createdAt).toBe(new Date(2026, 7, 22).getTime())
+    vi.useRealTimers()
+  })
+
+  it('ignore archived/pinned si ce ne sont pas des booléens', () => {
+    const result = sanitizeSyncedCounters([{ id: 'a', name: 'A', count: 1, archived: 'oui', pinned: 1 }])
+    expect(result[0].archived).toBeUndefined()
+    expect(result[0].pinned).toBeUndefined()
+  })
+
+  it('préserve archived/pinned/archivedAt quand ce sont des valeurs valides', () => {
+    const result = sanitizeSyncedCounters([
+      { id: 'a', name: 'A', count: 1, archived: true, pinned: true, archivedAt: 1_700_000_000_000 },
+    ])
+    expect(result[0].archived).toBe(true)
+    expect(result[0].pinned).toBe(true)
+    expect(result[0].archivedAt).toBe(1_700_000_000_000)
+  })
+
+  it("ignore archivedAt s'il n'est pas un nombre fini", () => {
+    const result = sanitizeSyncedCounters([
+      { id: 'a', name: 'A', count: 1, archivedAt: 'hier' },
+      { id: 'b', name: 'B', count: 1, archivedAt: Infinity },
+    ])
+    expect(result[0].archivedAt).toBeUndefined()
+    expect(result[1].archivedAt).toBeUndefined()
+  })
+
+  it("rejette un startDate qui n'est pas une date réelle, même bien formé (évite le crash Intl.DateTimeFormat)", () => {
+    const result = sanitizeSyncedCounters([{ id: 'a', name: 'A', count: 1, behavior: { startDate: '9999-99-99' } }])
+    expect(result[0].behavior.startDate).toBeUndefined()
+  })
+
+  it("rejette un backgroundImageUrl qui n'est pas http(s)", () => {
+    const result = sanitizeSyncedCounters([
+      { id: 'a', name: 'A', count: 1, appearance: { backgroundImageUrl: 'javascript:alert(1)' } },
+    ])
+    expect(result[0].appearance.backgroundImageUrl).toBeUndefined()
   })
 })
 

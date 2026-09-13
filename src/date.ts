@@ -1,3 +1,31 @@
+// Pas ancré (`^`/`$`) : inutile, la comparaison finale avec `value` dans
+// isValidIsoDate ci-dessous rejette déjà tout caractère superflu avant/après
+// (elle re-sérialise depuis les composants captés et compare la chaîne
+// entière), un ancrage n'y changerait donc rien d'observable.
+const ISO_DATE_PATTERN = /(\d{4})-(\d{2})-(\d{2})/
+
+/** Vrai si `value` est une date calendaire réelle au format YYYY-MM-DD — pas
+ * seulement une chaîne de la bonne forme : le 30 février est rejeté, alors
+ * que le constructeur `Date` le reporterait silencieusement début mars.
+ * Sert de garde avant tout passage à `Intl.DateTimeFormat`/`daysBetween`
+ * ci-dessous : une chaîne malformée (ex: reçue via la synchro, non
+ * ré-authentifiée par appareil, voir useRemoteSync.ts) produirait sinon un
+ * `Invalid Date`, sur lequel `Intl.DateTimeFormat.format` lève un
+ * `RangeError` au lieu de simplement afficher une valeur incorrecte. */
+export function isValidIsoDate(value: string): boolean {
+  const match = ISO_DATE_PATTERN.exec(value)
+  if (!match) return false
+  const [, yearStr, monthStr, dayStr] = match
+  // Construit depuis des composants numériques (jamais depuis une chaîne
+  // recomposée) puis reformate : contrairement à `new Date(chaîne)`, ce
+  // constructeur ne produit jamais d'`Invalid Date` (il reporte les valeurs
+  // hors bornes sur les unités suivantes, ex: jour 30 en février) — comparer
+  // le résultat à la chaîne d'origine détecte à la fois un composant hors
+  // bornes et tout caractère superflu qu'un motif non ancré aurait ignoré.
+  const date = new Date(Number(yearStr), Number(monthStr) - 1, Number(dayStr))
+  return toIsoDate(date.getTime()) === value
+}
+
 export function toIsoDate(timestamp: number): string {
   const d = new Date(timestamp)
   const year = d.getFullYear()

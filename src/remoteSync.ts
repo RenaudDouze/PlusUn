@@ -1,3 +1,4 @@
+import { sanitizeSyncedCounters } from './sync'
 import type { Counter } from './types'
 
 // Même alphabet que worker/src/code.ts (dupliqué volontairement : l'app et
@@ -84,13 +85,29 @@ export async function createSyncCode(workerUrl: string): Promise<string> {
   return body.code
 }
 
+/** `counters` dans une réponse du worker n'est authentifié par aucun
+ * appareil en particulier (voir `sanitizeSyncedCounters`, sync.ts) : le
+ * worker ne vérifie que la forme du tableau, jamais celle de ses éléments,
+ * donc n'importe qui connaît le code de synchro peut avoir poussé un
+ * `Counter` malformé. Assainir ici, au point d'entrée réseau, garantit que
+ * `SyncState.counters` est toujours un `Counter[]` exploitable pour tous les
+ * appelants (useRemoteSync.ts), plutôt que de compter sur chacun d'eux pour
+ * le faire. */
+function toSyncState(body: unknown): SyncState {
+  const raw = (body ?? {}) as { version?: unknown; counters?: unknown }
+  return {
+    version: typeof raw.version === 'number' ? raw.version : 0,
+    counters: sanitizeSyncedCounters(raw.counters),
+  }
+}
+
 /** Récupère l'état stocké pour un code. `null` si le code n'existe pas (ou
  * plus — voir l'expiration côté worker). */
 export async function fetchSyncState(workerUrl: string, code: string): Promise<SyncState | null> {
   const response = await fetch(`${workerUrl}/api/sync/${code}`)
   if (response.status === 404) return null
   if (!response.ok) throw new Error(await errorMessageFor(response, 'Impossible de récupérer les compteurs synchronisés.'))
-  return (await readJsonOrThrow(response)) as SyncState
+  return toSyncState(await readJsonOrThrow(response))
 }
 
 export interface PushResult {
@@ -109,7 +126,7 @@ export async function pushSyncState(workerUrl: string, code: string, push: PushR
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(push),
   })
-  if (response.status === 409) return { accepted: false, state: (await readJsonOrThrow(response)) as SyncState }
+  if (response.status === 409) return { accepted: false, state: toSyncState(await readJsonOrThrow(response)) }
   if (!response.ok) throw new Error(await errorMessageFor(response, 'Impossible de synchroniser les compteurs.'))
-  return { accepted: true, state: (await readJsonOrThrow(response)) as SyncState }
+  return { accepted: true, state: toSyncState(await readJsonOrThrow(response)) }
 }

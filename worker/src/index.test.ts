@@ -300,13 +300,32 @@ describe('PUT /api/sync/:code (écriture)', () => {
     expect(res.status).toBe(200)
   })
 
-  it('renvoie 413 pour un corps trop volumineux', async () => {
+  it('renvoie 413 pour un corps réellement trop volumineux', async () => {
     const env = makeEnv()
     const code = generateSyncCode()
+    // Compteurs bidon dont le JSON dépasse largement MAX_BODY_BYTES (256 Ko) :
+    // vérifie la taille réelle du corps, pas un en-tête déclaré (voir le test
+    // suivant, qui prouve que cet en-tête n'est justement pas fiable).
+    const bigCounters = Array.from({ length: 5000 }, (_, i) => ({ id: `id-${i}`, name: 'x'.repeat(50), count: i }))
     const req = new Request(`https://sync.example.com/api/sync/${code}`, {
       method: 'PUT',
-      body: JSON.stringify({ baseVersion: 0, counters: [] }),
-      headers: { 'Content-Length': String(1024 * 1024) },
+      body: JSON.stringify({ baseVersion: 0, counters: bigCounters }),
+    })
+    const res = await worker.fetch(req, env)
+    expect(res.status).toBe(413)
+  })
+
+  it("rejette un corps trop volumineux même avec un en-tête Content-Length mensonger (taille réelle vérifiée, pas l'en-tête déclaré)", async () => {
+    const env = makeEnv()
+    const code = generateSyncCode()
+    const bigCounters = Array.from({ length: 5000 }, (_, i) => ({ id: `id-${i}`, name: 'x'.repeat(50), count: i }))
+    const req = new Request(`https://sync.example.com/api/sync/${code}`, {
+      method: 'PUT',
+      body: JSON.stringify({ baseVersion: 0, counters: bigCounters }),
+      // En-tête délibérément mensonger (bien plus petit que le corps réel) :
+      // avant la correction, seul cet en-tête était vérifié, laissant passer
+      // n'importe quel corps tant qu'il annonçait une petite taille.
+      headers: { 'Content-Length': '10' },
     })
     const res = await worker.fetch(req, env)
     expect(res.status).toBe(413)
