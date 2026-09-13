@@ -109,6 +109,27 @@ describe('appels réseau', () => {
       expect(fetch).toHaveBeenCalledWith(`${WORKER_URL}/api/sync/ABCDEFGH`)
     })
 
+    it("assainit les compteurs reçus : n'importe qui connaît le code de synchro peut avoir poussé un compteur malformé (pas d'authentification par appareil, voir worker/README.md), à ne jamais faire planter le rendu (ex: counter.count.toString() sans count)", async () => {
+      vi.mocked(fetch).mockResolvedValue(
+        jsonResponse({ version: 1, counters: [{ id: 'x', name: 'Corrompu' }, 'pas-un-objet'] })
+      )
+      const result = await fetchSyncState(WORKER_URL, 'ABCDEFGH')
+      expect(result?.counters).toHaveLength(1)
+      expect(result?.counters[0]).toMatchObject({ id: 'x', name: 'Corrompu', count: 0 })
+    })
+
+    it("retombe sur version 0 si le corps ne renvoie pas une version numérique", async () => {
+      vi.mocked(fetch).mockResolvedValue(jsonResponse({ version: 'pas-un-nombre', counters: [] }))
+      const result = await fetchSyncState(WORKER_URL, 'ABCDEFGH')
+      expect(result?.version).toBe(0)
+    })
+
+    it('ne plante pas si le corps de la réponse est le littéral JSON `null`', async () => {
+      vi.mocked(fetch).mockResolvedValue(jsonResponse(null))
+      const result = await fetchSyncState(WORKER_URL, 'ABCDEFGH')
+      expect(result).toEqual({ version: 0, counters: [] })
+    })
+
     it('renvoie null pour un code inconnu (404)', async () => {
       vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 404 }))
       await expect(fetchSyncState(WORKER_URL, 'ABCDEFGH')).resolves.toBeNull()
@@ -146,6 +167,13 @@ describe('appels réseau', () => {
       vi.mocked(fetch).mockResolvedValue(jsonResponse(serverState, 409))
       const result = await pushSyncState(WORKER_URL, 'ABCDEFGH', { baseVersion: 1, counters: [] })
       expect(result).toEqual({ accepted: false, state: serverState })
+    })
+
+    it("assainit aussi l'état serveur renvoyé en cas de conflit (409) : il peut refléter ce qu'un autre appareil a poussé", async () => {
+      vi.mocked(fetch).mockResolvedValue(jsonResponse({ version: 5, counters: [{ id: 'y' }] }, 409))
+      const result = await pushSyncState(WORKER_URL, 'ABCDEFGH', { baseVersion: 1, counters: [] })
+      expect(result.accepted).toBe(false)
+      expect(result.state.counters[0]).toMatchObject({ id: 'y', name: 'Sans nom', count: 0 })
     })
 
     it('lève une erreur pour tout autre statut en échec', async () => {

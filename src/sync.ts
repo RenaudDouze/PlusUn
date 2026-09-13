@@ -1,6 +1,8 @@
 import * as LZString from 'lz-string'
 import { makeId } from './id'
 import { isValidImageUrl } from './url'
+import { isValidIsoDate } from './date'
+import { sanitizeCounterName } from './counterName'
 import type { Counter, CounterAppearance, CounterBehavior, DisplayStyle } from './types'
 
 /** Déclenche le téléchargement d'un blob sous le nom de fichier donné. */
@@ -54,7 +56,12 @@ function readBehavior(raw: Record<string, unknown>): CounterBehavior {
   const src = readNestedOrFlat(raw, 'behavior')
   return {
     oddsDenominator: typeof src.oddsDenominator === 'number' ? src.oddsDenominator : undefined,
-    startDate: typeof src.startDate === 'string' ? src.startDate : undefined,
+    // `isValidIsoDate` en plus du simple typeof : une chaîne de la bonne
+    // forme mais qui n'est pas une date réelle (voir sanitizeSyncedCounter
+    // plus bas) atteindrait sinon `Intl.DateTimeFormat.format` (date.ts),
+    // qui lève un `RangeError` sur un `Invalid Date` plutôt que d'afficher
+    // une valeur incorrecte.
+    startDate: typeof src.startDate === 'string' && isValidIsoDate(src.startDate) ? src.startDate : undefined,
     step: typeof src.step === 'number' ? src.step : undefined,
     target: typeof src.target === 'number' ? src.target : undefined,
   }
@@ -108,6 +115,48 @@ export function migrateStoredCounter(raw: Record<string, unknown>): Counter {
     behavior: readBehavior(raw),
     appearance: readAppearance(raw),
   }
+}
+
+/** Assainit un compteur reçu du worker de synchro (voir remoteSync.ts).
+ * Contrairement à un import (sauvegarde JSON, lien de partage), cette donnée
+ * n'est rattachée à aucun appareil en particulier : le code de synchro est un
+ * secret partagé, pas une authentification par appareil (voir
+ * worker/README.md) — n'importe qui le connaît peut avoir poussé n'importe
+ * quel JSON (le worker ne vérifie que la forme du tableau `counters`, jamais
+ * celle de ses éléments). Sans ce garde-fou, un champ manquant ou mal typé
+ * (ex: `count` absent) plante au premier accès non protégé (ex:
+ * `counter.count.toString()` dans CounterBehaviorSettingsPanel.tsx), et
+ * comme ni CounterCard ni <main> n'ont leur propre ErrorBoundary, ça démonte
+ * toute l'app pour l'appareil qui reçoit ce compteur.
+ *
+ * Contrairement à `normalizeCounter` (utilisée à l'import), préserve `id` :
+ * le régénérer à chaque sondage (toutes les 20s, voir useRemoteSync.ts)
+ * ferait réapparaître chaque carte comme un nouvel élément React (clé
+ * `counter.id` dans App.tsx), remontant toute l'UI locale ouverte dessus. */
+function sanitizeSyncedCounter(raw: Record<string, unknown>): Counter {
+  return {
+    id: typeof raw.id === 'string' && raw.id !== '' ? raw.id : makeId(),
+    name: typeof raw.name === 'string' ? sanitizeCounterName(raw.name) : 'Sans nom',
+    count: typeof raw.count === 'number' && Number.isFinite(raw.count) ? raw.count : 0,
+    createdAt:
+      typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now(),
+    archived: typeof raw.archived === 'boolean' ? raw.archived : undefined,
+    pinned: typeof raw.pinned === 'boolean' ? raw.pinned : undefined,
+    archivedAt:
+      typeof raw.archivedAt === 'number' && Number.isFinite(raw.archivedAt) ? raw.archivedAt : undefined,
+    behavior: readBehavior(raw),
+    appearance: readAppearance(raw),
+  }
+}
+
+/** `counters` renvoyé par le worker n'est vérifié côté serveur que comme un
+ * tableau (voir sanitizeSyncedCounter ci-dessus) : un élément qui n'est même
+ * pas un objet est ignoré plutôt que de faire planter le `.map`. Toute valeur
+ * qui n'est pas un tableau (payload complètement corrompu) retombe sur une
+ * liste vide. */
+export function sanitizeSyncedCounters(raw: unknown): Counter[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((c): c is Record<string, unknown> => !!c && typeof c === 'object').map(sanitizeSyncedCounter)
 }
 
 /** Parse un fichier JSON exporté. Retourne null si le contenu n'est pas valide. */

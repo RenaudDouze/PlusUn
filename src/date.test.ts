@@ -1,8 +1,51 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { daysBetween, daysSince, formatAveragePerDay, formatDuration, formatStartDate, toIsoDate, todayIsoDate } from './date'
+import {
+  daysBetween,
+  daysSince,
+  formatAveragePerDay,
+  formatDuration,
+  formatStartDate,
+  isValidIsoDate,
+  toIsoDate,
+  todayIsoDate,
+} from './date'
 
 const dateFormatter = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
 const compactDateFormatter = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit' })
+
+describe('isValidIsoDate', () => {
+  it('accepte une date réelle au format YYYY-MM-DD', () => {
+    expect(isValidIsoDate('2026-08-22')).toBe(true)
+  })
+
+  it("refuse une chaîne qui n'a pas la forme YYYY-MM-DD", () => {
+    expect(isValidIsoDate('22/08/2026')).toBe(false)
+  })
+
+  it('refuse une chaîne vide', () => {
+    expect(isValidIsoDate('')).toBe(false)
+  })
+
+  it("refuse une date qui a la bonne forme mais ne correspond à aucun jour réel (ex: payload corrompu reçu via la synchro)", () => {
+    expect(isValidIsoDate('9999-99-99')).toBe(false)
+  })
+
+  it("refuse le 30 février (jour hors bornes pour ce mois, que `new Date` reporterait silencieusement en mars)", () => {
+    expect(isValidIsoDate('2024-02-30')).toBe(false)
+  })
+
+  it('refuse un texte quelconque de 10 caractères', () => {
+    expect(isValidIsoDate('n-importe!')).toBe(false)
+  })
+
+  it('refuse une date précédée de caractères parasites', () => {
+    expect(isValidIsoDate('x2026-08-22')).toBe(false)
+  })
+
+  it('refuse une date suivie de caractères parasites', () => {
+    expect(isValidIsoDate('2026-08-22x')).toBe(false)
+  })
+})
 
 describe('toIsoDate', () => {
   it('formate une date avec mois et jour à deux chiffres', () => {
