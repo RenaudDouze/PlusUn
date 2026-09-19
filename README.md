@@ -97,7 +97,7 @@ npm run preview
   sur l'ensemble du code source.
 - **Mutation testing** : seuil 100%, mais scopé volontairement aux modules de
   logique pure sans JSX/animation (voir la liste `mutate` dans
-  `stryker.config.json` — actuellement `src/odds.ts`, `src/date.ts`,
+  `stryker.config.mjs` — actuellement `src/odds.ts`, `src/date.ts`,
   `src/sync.ts`, `src/remoteSync.ts`, `src/share.ts`, `src/id.ts`, `src/url.ts`,
   `src/colors.ts`, `src/sound.ts`, `src/reorder.ts`, `src/notifications.ts`,
   `src/shareCard.ts`, `src/counterName.ts`, `src/archiveStats.ts`) — un score
@@ -106,7 +106,7 @@ npm run preview
   visuel difficile à mutation-tester utilement). En CI cette liste est
   répartie automatiquement (`.github/scripts/mutation-shard-files.mjs`) sur 2
   jobs en parallèle pour réduire le temps total — la liste elle-même reste la
-  seule source de vérité, ajouter un module à `stryker.config.json` suffit,
+  seule source de vérité, ajouter un module à `stryker.config.mjs` suffit,
   aucun autre fichier à mettre à jour.
 - **Tests fonctionnels** : `e2e/` couvre les parcours de base, les
   fonctionnalités avancées (probabilité, date, glisser-déposer), la
