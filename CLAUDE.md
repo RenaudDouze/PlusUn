@@ -20,7 +20,7 @@ npm run test:mutation    # stryker run — see scope note below
 ```
 - Single unit test file: `npx vitest run src/foo.test.ts`
 - Single e2e file: `npx playwright test e2e/remote-sync.spec.ts` (add `--project=chromium` to skip the `mobile-chrome` project)
-- Single mutation target: `npx stryker run --mutate src/foo.ts` (path must already be in `stryker.config.json`'s `mutate` array)
+- Single mutation target: `npx stryker run --mutate src/foo.ts` (path must already be in `stryker.config.mjs`'s `mutate` array)
 
 **Worker (`worker/`)**
 ```bash
@@ -100,6 +100,6 @@ The 8-character code is a shared secret, not per-device authentication — anyon
 
 ### Testing conventions
 - Coverage threshold is 100% globally (`vitest.config.ts`), enforced in CI — any new code needs tests that actually exercise every branch, not just line coverage.
-- Mutation testing (Stryker) is intentionally scoped to pure-logic modules only (`stryker.config.json`'s `mutate` array) — React components/hooks with JSX, animation, or DOM timing are excluded as not realistically mutation-testable. Don't add a component file to that list; do add new pure-logic modules to it.
+- Mutation testing (Stryker) is intentionally scoped to pure-logic modules only (`stryker.config.mjs`'s `mutate` array) — React components/hooks with JSX, animation, or DOM timing are excluded as not realistically mutation-testable. Don't add a component file to that list; do add new pure-logic modules to it.
 - E2e worker tests (`e2e/remote-sync.spec.ts`) mock the Cloudflare Worker via `page.route`, replicating its version-based CAS logic in-memory (see `mockWorker` in that file) rather than hitting a real worker — `playwright.config.ts`'s `webServer` sets a bogus `VITE_SYNC_WORKER_URL` purely to make the Sync-code UI section render.
 - Assertions that depend on the 5s push debounce need an explicit generous `timeout` (Playwright's default assertion timeout is 5000ms, i.e. no margin against it) — see existing examples in `remote-sync.spec.ts`.
