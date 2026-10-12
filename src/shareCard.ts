@@ -72,6 +72,10 @@ export async function counterShareImageBlob(counter: Counter): Promise<Blob | nu
     canvas.width = CARD_WIDTH * EXPORT_SCALE
     canvas.height = CARD_HEIGHT * EXPORT_SCALE
     const ctx = canvas.getContext('2d')
+    // Stryker disable next-line ConditionalExpression: équivalent — sans ce
+    // garde, `ctx` null ferait lever `ctx.scale` juste en dessous (appel sur
+    // null), intercepté par le catch englobant la fonction, pour le même
+    // résultat final (`null`).
     if (!ctx) return null
     ctx.scale(EXPORT_SCALE, EXPORT_SCALE)
     ctx.drawImage(image, 0, 0)

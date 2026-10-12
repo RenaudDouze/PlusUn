@@ -82,8 +82,11 @@ class FakeCanvas {
   context: FakeCanvasContext | null = new FakeCanvasContext()
   toBlobResult: Blob | null = new Blob(['fake-png'], { type: 'image/png' })
   lastToBlobType: string | undefined
-  getContext() {
-    return this.context
+  getContext(type: string) {
+    // Comme un vrai canvas : un type de contexte autre que "2d" (ex: une
+    // chaîne vide) ne renvoie rien, plutôt que le contexte factice quel que
+    // soit l'argument.
+    return type === '2d' ? this.context : null
   }
   toBlob(callback: (blob: Blob | null) => void, type?: string) {
     this.lastToBlobType = type

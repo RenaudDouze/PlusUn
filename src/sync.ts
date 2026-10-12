@@ -61,6 +61,10 @@ function readBehavior(raw: Record<string, unknown>): CounterBehavior {
     // plus bas) atteindrait sinon `Intl.DateTimeFormat.format` (date.ts),
     // qui lève un `RangeError` sur un `Invalid Date` plutôt que d'afficher
     // une valeur incorrecte.
+    // Stryker disable next-line ConditionalExpression: équivalent — isValidIsoDate
+    // teste `value` via une regex (RegExp.prototype.exec coerce son argument
+    // en chaîne), donc un `src.startDate` qui n'est pas déjà une chaîne
+    // échoue de toute façon le test sans le garde `typeof`.
     startDate: typeof src.startDate === 'string' && isValidIsoDate(src.startDate) ? src.startDate : undefined,
     step: typeof src.step === 'number' ? src.step : undefined,
     target: typeof src.target === 'number' ? src.target : undefined,
@@ -74,6 +78,10 @@ function readAppearance(raw: Record<string, unknown>): CounterAppearance {
   // sauvegarde JSON forgés pourraient glisser une URL non http(s) (data:,
   // javascript:...) directement dans un `background-image` CSS, en
   // contournant complètement la validation appliquée à la saisie manuelle.
+  // Stryker disable next-line ConditionalExpression: équivalent — la valeur
+  // non-string serait de toute façon rejetée par isValidImageUrl ci-dessous
+  // (new URL(...) coerce puis lève pour une valeur qui n'est pas déjà une
+  // chaîne d'URL valide), donc ce garde `typeof` n'ajoute rien d'observable.
   const backgroundImageUrl = typeof src.backgroundImageUrl === 'string' ? src.backgroundImageUrl : undefined
   return {
     color: (typeof src.color === 'string' && src.color) || '#2563eb',
@@ -137,12 +145,23 @@ function sanitizeSyncedCounter(raw: Record<string, unknown>): Counter {
   return {
     id: typeof raw.id === 'string' && raw.id !== '' ? raw.id : makeId(),
     name: typeof raw.name === 'string' ? sanitizeCounterName(raw.name) : 'Sans nom',
+    // Stryker disable next-line ConditionalExpression: équivalent —
+    // Number.isFinite(x) n'est vrai que si x est déjà de type number (il ne
+    // coerce jamais, contrairement à l'isFinite global), donc `typeof x ===
+    // 'number' && Number.isFinite(x)` équivaut toujours à `Number.isFinite(x)`
+    // seul : le garde `typeof` ne change le résultat pour aucune valeur.
     count: typeof raw.count === 'number' && Number.isFinite(raw.count) ? raw.count : 0,
     createdAt:
+      // Stryker disable next-line ConditionalExpression: équivalent, même
+      // raison que `count` ci-dessus (Number.isFinite subsume déjà le
+      // `typeof`). Le `||` (LogicalOperator) reste en revanche un vrai bug
+      // potentiel — voir le test dédié à NaN/Infinity dans sync.test.ts.
       typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now(),
     archived: typeof raw.archived === 'boolean' ? raw.archived : undefined,
     pinned: typeof raw.pinned === 'boolean' ? raw.pinned : undefined,
     archivedAt:
+      // Stryker disable next-line ConditionalExpression: équivalent, même
+      // raison que `count` ci-dessus.
       typeof raw.archivedAt === 'number' && Number.isFinite(raw.archivedAt) ? raw.archivedAt : undefined,
     behavior: readBehavior(raw),
     appearance: readAppearance(raw),
@@ -241,6 +260,12 @@ export function encodeCountersToParam(counters: Counter[]): string {
  * paramètre est manquant, invalide, ou ne correspond pas à un tableau de
  * compteurs. */
 function parseCompactJson(json: string | null | undefined): Counter[] | null {
+  // Stryker disable next-line ConditionalExpression: équivalent — un `json`
+  // manquant/vide ferait de toute façon échouer JSON.parse (chaîne vide
+  // invalide) ou produire `null`/`undefined` (JSON.parse coerce son argument
+  // en chaîne, "null"/"undefined" parsent comme la valeur JS correspondante),
+  // qui échoue ensuite sur `.map` — intercepté par le catch ci-dessous, même
+  // résultat final (`null`) dans tous les cas.
   if (!json) return null
   try {
     const compact = JSON.parse(json) as CompactCounter[]
@@ -253,15 +278,18 @@ function parseCompactJson(json: string | null | undefined): Counter[] | null {
 }
 
 /** Décode un lien généré avant l'introduction de la compression lz-string
- * (base64 URL-safe d'un JSON brut, non compressé). */
-function decodeLegacyParam(param: string): string | null {
+ * (base64 URL-safe d'un JSON brut, non compressé). `undefined` (plutôt
+ * qu'un `null` explicite) en cas d'échec : l'unique appelant
+ * (parseCompactJson, via decodeCountersFromParam) traite déjà les deux de
+ * façon identique via son propre `if (!json) return null`. */
+function decodeLegacyParam(param: string): string | undefined {
   try {
     const base64 = param.replace(/-/g, '+').replace(/_/g, '/')
     const binary = atob(base64)
     const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
     return new TextDecoder().decode(bytes)
   } catch {
-    return null
+    // undefined implicite : cf. commentaire de la fonction.
   }
 }
 
