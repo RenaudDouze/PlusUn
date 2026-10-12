@@ -4,6 +4,7 @@ import {
   decodeCountersFromParam,
   downloadBackup,
   encodeCountersToParam,
+  migrateStoredCounter,
   parseBackupJson,
   sanitizeSyncedCounters,
 } from './sync'
@@ -272,6 +273,20 @@ describe('parseBackupJson', () => {
     expect(result?.[0].appearance.displayStyle).toBeUndefined()
   })
 
+  it("laisse oddsDenominator, step et target indéfinis s'ils ne sont pas des nombres (payload corrompu)", () => {
+    const result = parseBackupJson(
+      JSON.stringify([{ name: 'A', count: 1, oddsDenominator: '4096', step: '5', target: '50' }])
+    )
+    expect(result?.[0].behavior.oddsDenominator).toBeUndefined()
+    expect(result?.[0].behavior.step).toBeUndefined()
+    expect(result?.[0].behavior.target).toBeUndefined()
+  })
+
+  it("retombe sur la couleur par défaut si color n'est pas une chaîne (payload corrompu)", () => {
+    const result = parseBackupJson(JSON.stringify([{ name: 'A', count: 1, color: 42 }]))
+    expect(result?.[0].appearance.color).toBe('#2563eb')
+  })
+
   it('conserve archived optionnel', () => {
     const result = parseBackupJson(JSON.stringify([{ name: 'A', count: 1, archived: true }]))
     expect(result?.[0].archived).toBe(true)
@@ -305,6 +320,22 @@ describe('parseBackupJson', () => {
   it("laisse archivedAt indéfini s'il n'est pas un nombre (payload corrompu)", () => {
     const result = parseBackupJson(JSON.stringify([{ name: 'A', count: 1, archivedAt: 'hier' }]))
     expect(result?.[0].archivedAt).toBeUndefined()
+  })
+})
+
+describe('migrateStoredCounter', () => {
+  it('préserve id et les champs à plat, contrairement à normalizeCounter', () => {
+    const result = migrateStoredCounter({ id: 'conservé', name: 'A', count: 3, createdAt: 123 })
+    expect(result.id).toBe('conservé')
+    expect(result.name).toBe('A')
+    expect(result.count).toBe(3)
+    expect(result.createdAt).toBe(123)
+  })
+
+  it('lit behavior/appearance imbriqués ou à plat, comme normalizeCounter', () => {
+    const result = migrateStoredCounter({ id: 'a', name: 'A', count: 1, step: 5, color: '#16a34a' })
+    expect(result.behavior.step).toBe(5)
+    expect(result.appearance.color).toBe('#16a34a')
   })
 })
 
@@ -380,6 +411,20 @@ describe('sanitizeSyncedCounters', () => {
     vi.setSystemTime(new Date(2026, 7, 22))
     const result = sanitizeSyncedCounters([{ id: 'a', name: 'A', count: 1, createdAt: 'hier' }])
     expect(result[0].createdAt).toBe(new Date(2026, 7, 22).getTime())
+    vi.useRealTimers()
+  })
+
+  it('retombe aussi sur Date.now() si createdAt est un nombre non fini (NaN/Infinity)', () => {
+    // `typeof NaN`/`typeof Infinity` valent "number" : seul Number.isFinite
+    // (pas un simple typeof) rejette ces deux valeurs.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 22))
+    const result = sanitizeSyncedCounters([
+      { id: 'a', name: 'A', count: 1, createdAt: NaN },
+      { id: 'b', name: 'B', count: 1, createdAt: Infinity },
+    ])
+    expect(result[0].createdAt).toBe(new Date(2026, 7, 22).getTime())
+    expect(result[1].createdAt).toBe(new Date(2026, 7, 22).getTime())
     vi.useRealTimers()
   })
 
