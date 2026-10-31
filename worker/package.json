@@ -17,6 +17,6 @@
     "oxlint": "^1.87.0",
     "typescript": "~7.0.2",
     "vitest": "^5.0.2",
-    "wrangler": "^4.149.0"
+    "wrangler": "^4.154.0"
   }
 }
