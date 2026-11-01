@@ -18,4 +18,4 @@ id = "459cd0bfdb054351859d715dc53a8784"
 # déploiement (voir `normalizedAllowedOrigin` dans src/index.ts) au cas où,
 # mais autant la coller correcte dès le départ.
 [vars]
-ALLOWED_ORIGIN = "https://renauddouze.github.io"
+ALLOWED_ORIGIN = "https://douzeensemble.github.io"
