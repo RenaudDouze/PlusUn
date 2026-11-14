@@ -134,7 +134,7 @@ jour la protection de branche en même temps.
 
 ## Déploiement
 
-- `.github/workflows/deploy.yml` construit et publie l'app sur GitHub Pages à
+- `.github/workflows/pages.yml` construit et publie l'app sur GitHub Pages à
   chaque push sur `main`.
 - `.github/workflows/worker-deploy.yml` déploie le worker de synchro Cloudflare à
   chaque changement sous `worker/` poussé sur `main` (voir `worker/README.md` pour

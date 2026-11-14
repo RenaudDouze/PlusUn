@@ -75,7 +75,7 @@ jobs:
           path: playwright-report/
           retention-days: 14
 
-  mutation-tests-shard:
+  mutation-testing-shard:
     name: Mutation testing (logique pure) — lot ${{ matrix.shard }}
     strategy:
       matrix:
@@ -105,9 +105,9 @@ jobs:
   # référencent les required status checks du dépôt (voir README.md), et un
   # renommage aurait cassé la protection de branche sans qu'aucun réglage
   # GitHub ne l'indique dans ce repo.
-  mutation-tests:
+  mutation-testing:
     name: Mutation testing (logique pure)
-    needs: mutation-tests-shard
+    needs: mutation-testing-shard
     runs-on: ubuntu-latest
     steps:
       - run: echo "Les 2 lots de mutation testing sont passés."
@@ -144,7 +144,7 @@ jobs:
         working-directory: worker
 
   audit:
-    name: Audit des dépendances (front)
+    name: Audit des dépendances
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -165,7 +165,7 @@ jobs:
 
   build:
     name: Build de production
-    needs: [lint, typecheck, unit-tests, e2e-tests]
+    needs: [lint, typecheck, unit-tests, e2e-tests, mutation-testing, worker-tests, audit]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
