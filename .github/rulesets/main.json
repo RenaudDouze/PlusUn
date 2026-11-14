@@ -1,0 +1,84 @@
+{
+  "name": "main",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "bypass_actors": [],
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "required_linear_history"
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "required_reviewers": [],
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": true,
+        "allowed_merge_methods": [
+          "rebase"
+        ]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": true,
+        "required_status_checks": [
+          {
+            "context": "Linter",
+            "integration_id": 15368
+          },
+          {
+            "context": "Vérification des types",
+            "integration_id": 15368
+          },
+          {
+            "context": "Tests unitaires + couverture",
+            "integration_id": 15368
+          },
+          {
+            "context": "Tests fonctionnels (Playwright)",
+            "integration_id": 15368
+          },
+          {
+            "context": "Mutation testing (logique pure)",
+            "integration_id": 15368
+          },
+          {
+            "context": "Audit des dépendances",
+            "integration_id": 15368
+          },
+          {
+            "context": "Worker de synchronisation",
+            "integration_id": 15368
+          },
+          {
+            "context": "Build de production",
+            "integration_id": 15368
+          },
+          {
+            "context": "Analyse",
+            "integration_id": 15368
+          }
+        ]
+      }
+    }
+  ]
+}
