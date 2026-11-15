@@ -6,7 +6,7 @@ import { encodeCountersToParam } from './sync'
 import { COLORS } from './colors'
 import { useRemoteSync } from './hooks/useRemoteSync'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { getNotificationPermission, requestNotificationPermission } from './notifications'
+import { getNotificationPermission, requestNotificationPermission, showLocalNotification } from './notifications'
 import type { Counter } from './types'
 
 // Enveloppe la vraie classe dans un composant fonction (délègue à elle par
@@ -79,6 +79,541 @@ afterEach(() => {
 })
 
 describe('App', () => {
+  describe('détails de comportement', () => {
+    const seed = (...counters: Counter[]) => window.localStorage.setItem('+1.counters.v1', JSON.stringify(counters))
+    const two = () => [makeCounter({ id: 'a', name: 'Un', count: 10 }), makeCounter({ id: 'b', name: 'Deux', count: 20 })]
+    const stored = () => JSON.parse(window.localStorage.getItem('+1.counters.v1')!) as Counter[]
+    const menuButton = (name: string | RegExp) => screen.getByRole('button', { name })
+    const useRemoteHook = (overrides: Partial<ReturnType<typeof useRemoteSync>> = {}) => {
+      let trigger: (() => void) | undefined
+      vi.mocked(useRemoteSync).mockImplementation((_u, _c, _s, onRemoteUpdate) => {
+        trigger = onRemoteUpdate
+        return { code: null, status: 'disabled', errorMessage: null, createCode: async () => false, joinCode: async () => 'error', disable: () => {}, ...overrides }
+      })
+      return () => trigger?.()
+    }
+
+    // Certains tests plus haut laissent les faux minuteurs en place : les
+    // animations de sortie (AnimatePresence) en ont besoin de vrais.
+    beforeEach(() => {
+      vi.useRealTimers()
+    })
+
+    afterEach(() => {
+      vi.mocked(useRemoteSync).mockImplementation(defaultUseRemoteSyncImpl)
+      vi.mocked(getNotificationPermission).mockReturnValue('unsupported')
+      vi.useRealTimers()
+    })
+
+    describe('notifications et annonces', () => {
+      it("envoie aussi une notification système lors d'une mise à jour distante", () => {
+        const trigger = useRemoteHook()
+        render(<App />)
+        act(() => trigger())
+        expect(vi.mocked(showLocalNotification)).toHaveBeenCalledWith('PlusUn', { body: 'Compteurs mis à jour depuis un autre appareil' })
+      })
+
+      it("une seconde mise à jour relance le délai d'affichage du message", () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout'] })
+        const trigger = useRemoteHook()
+        render(<App />)
+        act(() => trigger())
+        act(() => {
+          vi.advanceTimersByTime(3_000)
+        })
+        act(() => trigger())
+        act(() => {
+          vi.advanceTimersByTime(3_000)
+        })
+        expect(screen.getByText('Compteurs mis à jour depuis un autre appareil')).toBeInTheDocument()
+      })
+
+      it("n'affiche aucun message de mise à jour au départ", () => {
+        render(<App />)
+        expect(document.querySelector('.sync-toast')).not.toBeInTheDocument()
+      })
+
+      it("la région d'annonce est vide au départ", () => {
+        render(<App />)
+        expect(document.querySelector('.sr-only[aria-live="polite"]')).toHaveTextContent('')
+      })
+
+      it.each([
+        ['denied', 'Notifications refusées — à réactiver depuis les réglages du navigateur'],
+        ['default', 'Activer les notifications'],
+        ['granted', 'Notifications activées'],
+      ] as const)("libellé du bouton de notifications (%s)", (state, label) => {
+        vi.mocked(getNotificationPermission).mockReturnValue(state)
+        render(<App />)
+        openMenu()
+        const button = menuButton(label)
+        expect(button).toHaveAttribute('title', label)
+      })
+
+      it('le menu contient exactement ses boutons quand les notifications ne sont pas supportées', () => {
+        seed(makeCounter())
+        render(<App />)
+        openMenu()
+        expect(document.querySelectorAll('.app-menu button')).toHaveLength(6)
+      })
+
+      it('cliquer sur les notifications referme le menu', async () => {
+        vi.mocked(getNotificationPermission).mockReturnValue('default')
+        vi.mocked(requestNotificationPermission).mockResolvedValue('granted')
+        render(<App />)
+        openMenu()
+        await act(async () => {
+          fireEvent.click(menuButton('Activer les notifications'))
+        })
+        expect(document.querySelector('.app-menu')).not.toBeInTheDocument()
+      })
+    })
+
+    describe('menu', () => {
+      it.each([
+        ['Thème : Auto'],
+        ['Synchroniser'],
+        ['Mode focus'],
+        ['Plein écran'],
+        ['Rechercher'],
+        [/^Vue : Actifs/],
+      ])("se referme après « %s »", async (name) => {
+        seed(makeCounter())
+        render(<App />)
+        openMenu()
+        await act(async () => {
+          fireEvent.click(menuButton(name))
+        })
+        expect(document.querySelector('.app-menu')).not.toBeInTheDocument()
+      })
+
+      it("Échap est ignoré quand le menu est fermé", () => {
+        render(<App />)
+        expect(fireEvent.keyDown(document, { key: 'Escape' })).toBe(true)
+        expect(menuButton(/^Ouvrir le menu/)).not.toHaveFocus()
+      })
+
+      it("Échap bloque son action par défaut quand le menu est ouvert", () => {
+        render(<App />)
+        openMenu()
+        expect(fireEvent.keyDown(document, { key: 'Escape' })).toBe(false)
+      })
+
+      it("retire ses écouteurs à la fermeture", () => {
+        const remove = vi.spyOn(document, 'removeEventListener')
+        render(<App />)
+        openMenu()
+        fireEvent.keyDown(document, { key: 'Escape' })
+        expect(remove).toHaveBeenCalledWith('keydown', expect.any(Function))
+        expect(remove).toHaveBeenCalledWith('pointerdown', expect.any(Function))
+      })
+
+      it("marque le bouton menu et le bouton Synchroniser en alerte seulement en erreur de synchro", () => {
+        render(<App />)
+        expect(menuButton(/^Ouvrir le menu/).className).toBe('add-btn icon-btn')
+        openMenu()
+        expect(menuButton('Synchroniser').className).toBe('add-btn icon-btn')
+        useRemoteHook({ status: 'error' })
+        const view = render(<App />)
+        view.unmount()
+      })
+
+      it("signale l'erreur de synchro par une classe d'alerte", () => {
+        useRemoteHook({ status: 'error' })
+        render(<App />)
+        expect(menuButton(/^Ouvrir le menu/)).toHaveClass('icon-btn--alert')
+        openMenu()
+        expect(menuButton(/^Synchroniser/)).toHaveClass('icon-btn--alert')
+      })
+
+      it("le bouton de thème porte son libellé en nom accessible et en infobulle, et fait tourner les thèmes", () => {
+        render(<App />)
+        openMenu()
+        expect(menuButton('Thème : Auto')).toHaveAttribute('title', 'Thème : Auto')
+        expect(menuButton('Thème : Auto')).toHaveAttribute('aria-label', 'Thème : Auto')
+        fireEvent.click(menuButton('Thème : Auto'))
+        openMenu()
+        expect(menuButton('Thème : Clair')).toHaveAttribute('title', 'Thème : Clair')
+      })
+
+      it("applique la couleur de la barre de statut selon le thème", () => {
+        const meta = document.querySelector('meta[name="theme-color"]')!
+        window.localStorage.setItem('+1.theme.v1', JSON.stringify('dark'))
+        const first = render(<App />)
+        expect(meta.getAttribute('content')).toBe('#0f172a')
+        first.unmount()
+        window.localStorage.setItem('+1.theme.v1', JSON.stringify('light'))
+        render(<App />)
+        expect(meta.getAttribute('content')).toBe('#f8fafc')
+      })
+
+      it("la vue Archivés se quitte avec le même bouton", async () => {
+        seed(makeCounter({ id: 'a', name: 'Un' }), makeCounter({ id: 'b', name: 'Deux', archived: true }))
+        render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Vue : Actifs (1 archivé(s))'))
+        expect(screen.getByText('Deux')).toBeInTheDocument()
+        openMenu()
+        fireEvent.click(menuButton('Vue : Archivés (1)'))
+        expect(screen.getByText('Un')).toBeInTheDocument()
+        await waitFor(() => expect(screen.queryByText('Deux')).not.toBeInTheDocument())
+      })
+    })
+
+    describe('mode focus et plein écran', () => {
+      it("ne déplace pas le focus au montage", () => {
+        render(<App />)
+        expect(document.body).toHaveFocus()
+      })
+
+      it("rend le focus au bouton de sortie puis au bouton menu", () => {
+        seed(makeCounter())
+        render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Mode focus'))
+        expect(menuButton('Quitter le mode focus')).toHaveFocus()
+        fireEvent.click(menuButton('Quitter le mode focus'))
+        expect(menuButton(/^Ouvrir le menu/)).toHaveFocus()
+      })
+
+      it("Échap hors mode focus ne quitte pas le plein écran", () => {
+        seed(makeCounter())
+        render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Plein écran'))
+        fireEvent.keyDown(document, { key: 'Escape' })
+        openMenu()
+        expect(menuButton('Quitter le plein écran')).toBeInTheDocument()
+      })
+
+      it("retire ses écouteurs en quittant le mode focus et au démontage", () => {
+        seed(makeCounter())
+        const remove = vi.spyOn(document, 'removeEventListener')
+        const view = render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Mode focus'))
+        fireEvent.click(menuButton('Quitter le mode focus'))
+        expect(remove).toHaveBeenCalledWith('keydown', expect.any(Function))
+        view.unmount()
+        expect(remove).toHaveBeenCalledWith('fullscreenchange', expect.any(Function))
+      })
+
+      it("ne garde pas d'écouteur Échap après la sortie du mode focus", () => {
+        seed(makeCounter())
+        render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Mode focus'))
+        fireEvent.click(menuButton('Quitter le mode focus'))
+        openMenu()
+        fireEvent.click(menuButton('Plein écran'))
+        fireEvent.keyDown(document, { key: 'Escape' })
+        openMenu()
+        expect(menuButton('Quitter le plein écran')).toBeInTheDocument()
+      })
+
+      it("fonctionne sans balise meta theme-color", () => {
+        const meta = document.querySelector('meta[name="theme-color"]')!
+        meta.remove()
+        expect(() => render(<App />)).not.toThrow()
+        document.head.appendChild(meta)
+      })
+
+      it("quitter le plein écran sans API exitFullscreen ne plante pas", () => {
+        seed(makeCounter())
+        Object.defineProperty(document, 'fullscreenElement', { value: document.body, configurable: true })
+        render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Plein écran'))
+        openMenu()
+        expect(() => fireEvent.click(menuButton('Quitter le plein écran'))).not.toThrow()
+        Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+      })
+    })
+
+    describe('recherche', () => {
+      it("ignore les espaces autour de la requête et traite une requête d'espaces comme vide", async () => {
+        seed(...two())
+        render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Rechercher'))
+        const input = screen.getByLabelText('Rechercher un compteur')
+        fireEvent.change(input, { target: { value: '  deux ' } })
+        expect(screen.getByText('Deux')).toBeInTheDocument()
+        await waitFor(() => expect(screen.queryByText('Un')).not.toBeInTheDocument())
+        fireEvent.change(input, { target: { value: '   ' } })
+        expect(screen.getByText('Un')).toBeInTheDocument()
+        expect(screen.getByText('Deux')).toBeInTheDocument()
+      })
+
+      it("le message sans résultat reprend la requête sans espaces ; une requête d'espaces n'en est pas une", () => {
+        seed(makeCounter({ id: 'a', name: 'Un', archived: true }))
+        render(<App />)
+        openMenu()
+        // Un seul compteur, archivé : la vue Actifs est vide.
+        expect(screen.getByText('Tous tes compteurs sont archivés.')).toBeInTheDocument()
+        fireEvent.click(menuButton('Rechercher'))
+        const input = screen.getByLabelText('Rechercher un compteur')
+        fireEvent.change(input, { target: { value: '   ' } })
+        expect(screen.getByText('Tous tes compteurs sont archivés.')).toBeInTheDocument()
+        fireEvent.change(input, { target: { value: ' zzz ' } })
+        expect(document.querySelector('.empty-state p')?.textContent).toBe('Aucun compteur ne correspond à « zzz ».')
+      })
+
+      it("la barre de recherche disparaît quand il n'y a plus de compteur", () => {
+        seed(makeCounter({ id: 'a', name: 'Un' }))
+        render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Rechercher'))
+        expect(screen.getByLabelText('Rechercher un compteur')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Actions du compteur' }))
+        fireEvent.click(screen.getByText('Supprimer ce compteur'))
+        fireEvent.click(screen.getByText('Confirmer la suppression'))
+        expect(screen.queryByLabelText('Rechercher un compteur')).not.toBeInTheDocument()
+      })
+
+      it("Échap ferme la recherche et vide la requête", () => {
+        seed(...two())
+        render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Rechercher'))
+        fireEvent.change(screen.getByLabelText('Rechercher un compteur'), { target: { value: 'deux' } })
+        fireEvent.keyDown(screen.getByLabelText('Rechercher un compteur'), { key: 'Escape' })
+        expect(screen.getByText('Un')).toBeInTheDocument()
+      })
+    })
+
+    describe('archives', () => {
+      it("n'affiche pas la barre de statistiques sans compteur archivé", () => {
+        seed(makeCounter({ id: 'a', name: 'Un' }))
+        render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Vue : Actifs'))
+        expect(screen.getByText('Aucun compteur archivé.')).toBeInTheDocument()
+        expect(document.querySelector('.archive-stats-bar')).not.toBeInTheDocument()
+      })
+
+      it("compte uniquement les compteurs archivés, et met les statistiques à jour", () => {
+        seed(
+          makeCounter({ id: 'a', name: 'Un', archived: true, count: 4 }),
+          makeCounter({ id: 'b', name: 'Deux', count: 6 })
+        )
+        render(<App />)
+        openMenu()
+        expect(menuButton('Vue : Actifs (1 archivé(s))')).toBeInTheDocument()
+        fireEvent.click(menuButton('Vue : Actifs (1 archivé(s))'))
+        expect(document.querySelector('.archive-stat-value')).toHaveTextContent('1')
+        openMenu()
+        fireEvent.click(menuButton('Vue : Archivés (1)'))
+        fireEvent.click(within(screen.getByText('Deux').closest('article')!).getByRole('button', { name: 'Actions du compteur' }))
+        fireEvent.click(screen.getByText('Archiver ce compteur'))
+        openMenu()
+        fireEvent.click(menuButton(/^Vue : Actifs/))
+        expect(document.querySelector('.archive-stat-value')).toHaveTextContent('2')
+      })
+    })
+
+    describe('annulation', () => {
+      const deleteCounter = async (name: string) => {
+        fireEvent.click(within(screen.getByText(name).closest('article')!).getByRole('button', { name: 'Actions du compteur' }))
+        fireEvent.click(screen.getByText('Supprimer ce compteur'))
+        fireEvent.click(screen.getByText('Confirmer la suppression'))
+        await waitFor(() => expect(screen.queryByText(name)).not.toBeInTheDocument())
+      }
+
+      it("garde au plus 10 actions annulables", async () => {
+        seed(...Array.from({ length: 12 }, (_, i) => makeCounter({ id: `c${i}`, name: `C${i}` })))
+        render(<App />)
+        for (let i = 0; i < 11; i++) await deleteCounter(`C${i}`)
+        expect(screen.getByRole('button', { name: 'Annuler (10)' })).toBeInTheDocument()
+      })
+
+      it("après une annulation partielle, le message reste le temps d'un délai complet", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout'] })
+        seed(...two())
+        render(<App />)
+        await deleteCounter('Un')
+        await deleteCounter('Deux')
+        act(() => {
+          vi.advanceTimersByTime(4_000)
+        })
+        fireEvent.click(screen.getByRole('button', { name: /^Annuler/ }))
+        act(() => {
+          vi.advanceTimersByTime(3_000)
+        })
+        expect(screen.getByRole('button', { name: 'Annuler' })).toBeInTheDocument()
+        act(() => {
+          vi.advanceTimersByTime(2_500)
+        })
+        expect(screen.queryByRole('button', { name: 'Annuler' })).not.toBeInTheDocument()
+      })
+
+      it("cible le bon compteur pour une modification de valeur", () => {
+        seed(...two())
+        render(<App />)
+        fireEvent.click(within(screen.getByText('Deux').closest('article')!).getByRole('button', { name: 'Régler le comportement du compteur' }))
+        const input = screen.getByDisplayValue('20')
+        fireEvent.change(input, { target: { value: '25' } })
+        fireEvent.keyDown(input, { key: 'Enter' })
+        expect(screen.getByText('Valeur de « Deux » modifiée')).toBeInTheDocument()
+        expect(stored().map((c) => c.count)).toEqual([10, 25])
+      })
+
+      it("supprime le bon compteur", () => {
+        seed(...two())
+        render(<App />)
+        fireEvent.click(within(screen.getByText('Deux').closest('article')!).getByRole('button', { name: 'Actions du compteur' }))
+        fireEvent.click(screen.getByText('Supprimer ce compteur'))
+        fireEvent.click(screen.getByText('Confirmer la suppression'))
+        expect(screen.getByText('Compteur « Deux » supprimé')).toBeInTheDocument()
+        expect(stored().map((c) => c.id)).toEqual(['a'])
+      })
+    })
+
+    describe('actions sur le bon compteur', () => {
+      it("incrémente seulement le compteur cliqué", () => {
+        seed(...two())
+        render(<App />)
+        fireEvent.click(within(screen.getByText('Deux').closest('article')!).getByRole('button', { name: 'Incrémenter' }))
+        expect(stored().map((c) => c.count)).toEqual([10, 21])
+      })
+
+      it("duplique le bon compteur en gardant ses réglages sauf la date de début", () => {
+        seed(makeCounter({ id: 'a', name: 'Un' }), makeCounter({ id: 'b', name: 'Deux', behavior: { step: 5, target: 50, startDate: '2026-01-01' } }))
+        render(<App />)
+        fireEvent.click(within(screen.getByText('Deux').closest('article')!).getByRole('button', { name: 'Actions du compteur' }))
+        fireEvent.click(screen.getByText('Dupliquer ce compteur'))
+        const copy = stored()[2]
+        expect(copy.name).toBe('Deux (copie)')
+        expect(copy.behavior).toEqual({ step: 5, target: 50, startDate: undefined })
+        expect(copy.count).toBe(0)
+      })
+
+      it("le nouveau compteur prend la couleur suivante de la palette", () => {
+        render(<App />)
+        fireEvent.click(screen.getByRole('button', { name: '+ Nouveau compteur' }))
+        expect(stored()[0].appearance.color).toBe(COLORS[0])
+        fireEvent.click(screen.getByRole('button', { name: '+ Nouveau compteur' }))
+        expect(stored()[1].appearance.color).toBe(COLORS[1])
+      })
+
+      it("applique un patch au bon compteur seulement", () => {
+        seed(...two())
+        render(<App />)
+        fireEvent.click(within(screen.getByText('Deux').closest('article')!).getByRole('button', { name: 'Personnaliser le compteur' }))
+        const input = screen.getByDisplayValue('Deux')
+        fireEvent.change(input, { target: { value: 'Renommé' } })
+        fireEvent.keyDown(input, { key: 'Enter' })
+        expect(stored().map((c) => c.name)).toEqual(['Un', 'Renommé'])
+      })
+
+      it("épingle et archive le bon compteur seulement", () => {
+        seed(...two())
+        render(<App />)
+        const second = () => within(screen.getByText('Deux').closest('article')!)
+        fireEvent.click(second().getByRole('button', { name: 'Actions du compteur' }))
+        fireEvent.click(screen.getByRole('button', { name: /Épingler/ }))
+        expect(stored().map((c) => !!c.pinned)).toEqual([false, true])
+        fireEvent.click(second().getByRole('button', { name: 'Actions du compteur' }))
+        fireEvent.click(screen.getByText('Archiver ce compteur'))
+        expect(stored().map((c) => !!c.archived)).toEqual([false, true])
+      })
+
+      it("déplace le compteur voisin et annonce son rang (milieu de liste)", async () => {
+        seed(makeCounter({ id: 'a', name: 'Un' }), makeCounter({ id: 'b', name: 'Deux' }), makeCounter({ id: 'c', name: 'Trois' }))
+        render(<App />)
+        const handle = (name: string) => within(screen.getByText(name).closest('article')!).getByRole('button', { name: 'Réordonner le compteur (flèches Haut/Bas)' })
+        fireEvent.keyDown(handle('Trois'), { key: 'ArrowUp' })
+        await waitFor(() => expect(stored().map((c) => c.name)).toEqual(['Un', 'Trois', 'Deux']))
+        expect(screen.getByText('Trois déplacé en position 2 sur 3')).toBeInTheDocument()
+      })
+
+      it("remonte le deuxième compteur en tête", async () => {
+        seed(...two())
+        render(<App />)
+        fireEvent.keyDown(within(screen.getByText('Deux').closest('article')!).getByRole('button', { name: 'Réordonner le compteur (flèches Haut/Bas)' }), { key: 'ArrowUp' })
+        await waitFor(() => expect(stored().map((c) => c.name)).toEqual(['Deux', 'Un']))
+      })
+
+      it("ne déplace pas le dernier compteur vers le bas, ni le premier vers le haut", () => {
+        seed(...two())
+        render(<App />)
+        const handle = (name: string) => within(screen.getByText(name).closest('article')!).getByRole('button', { name: 'Réordonner le compteur (flèches Haut/Bas)' })
+        fireEvent.keyDown(handle('Deux'), { key: 'ArrowDown' })
+        fireEvent.keyDown(handle('Un'), { key: 'ArrowUp' })
+        expect(stored().map((c) => c.name)).toEqual(['Un', 'Deux'])
+      })
+
+      it("taille le chiffre en mode plein espace jusqu'à deux compteurs, pas au-delà", () => {
+        const widthSpy = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(320)
+        const heightSpy = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(480)
+        seed(...two())
+        const first = render(<App />)
+        expect((document.querySelector('.counter-value') as HTMLElement).style.fontSize).toMatch(/px$/)
+        first.unmount()
+        seed(...two(), makeCounter({ id: 'c', name: 'Trois' }))
+        render(<App />)
+        expect((document.querySelector('.counter-value') as HTMLElement).style.fontSize).toBe('')
+        widthSpy.mockRestore()
+        heightSpy.mockRestore()
+      })
+    })
+
+    describe('import et liens', () => {
+      it("n'écrit pas l'historique sans paramètre import ni action", () => {
+        const replace = vi.spyOn(window.history, 'replaceState')
+        render(<App />)
+        expect(replace).not.toHaveBeenCalled()
+      })
+
+      it.each([['import', encodeCountersToParam([makeCounter({ name: 'Partagé' })])], ['action', 'new']])(
+        "nettoie l'URL (%s) avec un état et un titre vides",
+        (param, value) => {
+          const replace = vi.spyOn(window.history, 'replaceState')
+          window.history.pushState({}, '', `/?${param}=${value}`)
+          render(<App />)
+          expect(replace).toHaveBeenCalledWith({}, '', expect.not.stringContaining(param))
+        }
+      )
+
+      it("un lien d'import vide ne remplace pas les compteurs existants", () => {
+        seed(makeCounter({ name: 'Ancien' }))
+        const confirmSpy = vi.spyOn(window, 'confirm')
+        window.history.pushState({}, '', `/?import=${encodeCountersToParam([])}`)
+        render(<App />)
+        expect(confirmSpy).not.toHaveBeenCalled()
+        expect(screen.getByText('Ancien')).toBeInTheDocument()
+      })
+
+      it("demande confirmation en indiquant les nombres de compteurs", () => {
+        seed(makeCounter({ id: 'x', name: 'Ancien' }), makeCounter({ id: 'y', name: 'Ancien 2' }))
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+        window.history.pushState({}, '', `/?import=${encodeCountersToParam([makeCounter({ name: 'Nouveau' })])}`)
+        render(<App />)
+        expect(confirmSpy).toHaveBeenCalledWith(
+          'Importer 1 compteur(s) partagé(s) ?\n\nOK pour remplacer tes 2 compteur(s) actuel(s), Annuler pour les ajouter à la suite.'
+        )
+      })
+
+      it.each([
+        ['remplace', true, ['Importé']],
+        ['ajoute', false, ['Existant', 'Importé']],
+      ])("l'import par fichier %s les compteurs selon la confirmation", async (_label, confirmed, expected) => {
+        seed(makeCounter({ name: 'Existant' }))
+        vi.spyOn(window, 'confirm').mockReturnValue(confirmed)
+        render(<App />)
+        openMenu()
+        fireEvent.click(menuButton('Synchroniser'))
+        await screen.findByText('Synchroniser mes compteurs')
+        const input = document.querySelector('input[type="file"]') as HTMLInputElement
+        const file = new File([JSON.stringify([makeCounter({ id: 'imp', name: 'Importé' })])], 'b.json', { type: 'application/json' })
+        await act(async () => {
+          fireEvent.change(input, { target: { files: [file] } })
+        })
+        await waitFor(() => expect(stored().map((c) => c.name)).toEqual(expected))
+      })
+    })
+  })
+
   it("affiche l'état vide au premier lancement", () => {
     render(<App />)
     expect(screen.getByText("Aucun compteur pour l'instant.")).toBeInTheDocument()
