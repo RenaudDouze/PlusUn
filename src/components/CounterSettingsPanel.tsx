@@ -35,13 +35,15 @@ export function CounterSettingsPanel({ counter, colors, onClose, onUpdate, onNav
   }
 
   const commitBackground = () => {
-    const trimmed = draftBackground.trim()
-    if (!trimmed) {
-      setBackgroundError(null)
+    // Pas de trim() : un <input type="url"> retire déjà les espaces de bord
+    // (assainissement de la valeur par le navigateur).
+    const url = draftBackground
+    // Pas de setBackgroundError(null) ici : une erreur n'existe qu'après un
+    // commit invalide, et toute modification de la saisie l'efface déjà (onChange).
+    if (!url) {
       onUpdate({ appearance: { ...counter.appearance, backgroundImageUrl: undefined } })
-    } else if (isValidImageUrl(trimmed)) {
-      setBackgroundError(null)
-      onUpdate({ appearance: { ...counter.appearance, backgroundImageUrl: trimmed } })
+    } else if (isValidImageUrl(url)) {
+      onUpdate({ appearance: { ...counter.appearance, backgroundImageUrl: url } })
     } else {
       setBackgroundError('URL http(s) invalide.')
     }
@@ -116,7 +118,7 @@ export function CounterSettingsPanel({ counter, colors, onClose, onUpdate, onNav
               }
             >
               <span className="display-style-preview">
-                <CounterValueDisplay value={8} direction={1} style={opt.id} progress={opt.id === 'ring' ? 0.6 : null} />
+                <CounterValueDisplay value={8} direction={1} style={opt.id} progress={0.6} />
               </span>
               <span className="display-style-name">{opt.label}</span>
             </button>

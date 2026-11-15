@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { CounterSettingsPanel } from './CounterSettingsPanel'
 import type { Counter, CounterAppearance } from '../types'
@@ -311,6 +311,85 @@ describe('CounterSettingsPanel', () => {
       const { onUpdate } = renderPanel({ archived: true, color: TEST_COLORS[0] })
       fireEvent.click(screen.getByRole('button', { name: `Choisir la couleur ${TEST_COLORS[1]}` }))
       expect(onUpdate).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('états visuels et accessibles', () => {
+    it('couleur : exprime la sélection par classe, aria-pressed, titre et fond', () => {
+      renderPanel({ color: TEST_COLORS[1] })
+      const selected = screen.getByRole('button', { name: `Choisir la couleur ${TEST_COLORS[1]}` })
+      const other = screen.getByRole('button', { name: `Choisir la couleur ${TEST_COLORS[0]}` })
+      expect(selected).toHaveClass('counter-color-option', 'selected')
+      expect(selected).toHaveAttribute('aria-pressed', 'true')
+      expect(other.className).toBe('counter-color-option')
+      expect(other).toHaveAttribute('aria-pressed', 'false')
+      expect(other).toHaveAttribute('aria-label', `Choisir la couleur ${TEST_COLORS[0]}`)
+      expect(other).toHaveAttribute('title', `Choisir la couleur ${TEST_COLORS[0]}`)
+      expect(other.style.background).toBe('rgb(37, 99, 235)')
+    })
+
+    it('style : exprime la sélection par classe et aria-pressed', () => {
+      renderPanel({ displayStyle: 'flap' })
+      const selected = screen.getByRole('button', { name: 'Choisir le style Volets' })
+      const other = screen.getByRole('button', { name: 'Choisir le style Odomètre' })
+      expect(selected).toHaveClass('display-style-option', 'selected')
+      expect(selected).toHaveAttribute('aria-pressed', 'true')
+      expect(other.className).toBe('display-style-option')
+      expect(other).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it("style : l'aperçu de l'anneau montre une progression", () => {
+      renderPanel()
+      expect(within(screen.getByRole('button', { name: 'Choisir le style Anneau' })).getByText('60 %')).toBeInTheDocument()
+    })
+
+    it("image de fond : aria-invalid et message d'erreur suivent l'état de validation", () => {
+      renderPanel()
+      const input = screen.getByPlaceholderText('https://exemple.com/image.jpg')
+      expect(input).toHaveAttribute('aria-invalid', 'false')
+      expect(document.querySelector('.modal-error')).not.toBeInTheDocument()
+      fireEvent.change(input, { target: { value: 'pas-une-url' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(input).toHaveAttribute('aria-invalid', 'true')
+      expect(document.querySelector('.modal-error')).toHaveTextContent('URL http(s) invalide.')
+    })
+
+    it("image de fond : l'erreur disparaît dès que la saisie change", () => {
+      renderPanel()
+      const input = screen.getByPlaceholderText('https://exemple.com/image.jpg')
+      fireEvent.change(input, { target: { value: 'pas-une-url' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      fireEvent.change(input, { target: { value: 'pas-une-url-2' } })
+      expect(screen.queryByText('URL http(s) invalide.')).not.toBeInTheDocument()
+      expect(input).toHaveAttribute('aria-invalid', 'false')
+    })
+
+    it("image de fond : le bouton « Vider » efface aussi l'erreur affichée", () => {
+      renderPanel()
+      const input = screen.getByPlaceholderText('https://exemple.com/image.jpg')
+      fireEvent.change(input, { target: { value: 'pas-une-url' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      fireEvent.click(screen.getByRole('button', { name: "Vider l'image de fond" }))
+      expect(screen.queryByText('URL http(s) invalide.')).not.toBeInTheDocument()
+    })
+
+    it("image de fond : ignore les espaces autour de l'URL", () => {
+      const { onUpdate } = renderPanel()
+      const input = screen.getByPlaceholderText('https://exemple.com/image.jpg')
+      fireEvent.change(input, { target: { value: '  https://exemple.com/photo.png  ' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onUpdate).toHaveBeenCalledWith({
+        appearance: expect.objectContaining({ backgroundImageUrl: 'https://exemple.com/photo.png' }),
+      })
+    })
+
+    it("image de fond : une saisie d'espaces seuls vaut champ vide", () => {
+      const { onUpdate } = renderPanel({ backgroundImageUrl: 'https://exemple.com/ancien.jpg' })
+      const input = screen.getByDisplayValue('https://exemple.com/ancien.jpg')
+      fireEvent.change(input, { target: { value: '   ' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onUpdate).toHaveBeenCalledWith({ appearance: expect.objectContaining({ backgroundImageUrl: undefined }) })
+      expect(screen.queryByText('URL http(s) invalide.')).not.toBeInTheDocument()
     })
   })
 })

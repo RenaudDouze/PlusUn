@@ -46,7 +46,8 @@ export function CounterBehaviorSettingsPanel({
       setCountError('Nombre entier requis.')
       return
     }
-    setCountError(null)
+    // Pas de setCountError(null) ici : l'erreur n'existe qu'après un commit
+    // invalide, et toute modification de la saisie l'efface déjà (onChange).
     onSetCount(parseInt(trimmed, 10))
   }
 

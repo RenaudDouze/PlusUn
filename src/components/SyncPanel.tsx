@@ -63,8 +63,9 @@ export function SyncPanel({ counters, onClose, onImport, remoteSync }: SyncPanel
     // dans une image de taille constante (modules devenant illisibles).
     QRCode.toDataURL(url, { scale: 6, margin: 2, color: { dark: '#0f172a', light: '#ffffff' } })
       .then((dataUrl) => {
+        // Pas de setQrError(null) ici : l'erreur n'est affichée que sans QR code,
+        // et toute génération réussie suit un état sans erreur ou la vide déjà.
         setQrDataUrl(dataUrl)
-        setQrError(null)
       })
       .catch(() => {
         // Dépassement de la capacité maximale d'un QR code (~2,9 Ko) : au-delà,
@@ -85,7 +86,6 @@ export function SyncPanel({ counters, onClose, onImport, remoteSync }: SyncPanel
   }, [onClose])
 
   const handleFileChosen = async (file: File) => {
-    setError(null)
     const text = await file.text()
     const imported = parseBackupJson(text)
     if (!imported) {
@@ -239,7 +239,7 @@ export function SyncPanel({ counters, onClose, onImport, remoteSync }: SyncPanel
             <button className="modal-btn" onClick={() => downloadBackup(counters)} disabled={counters.length === 0}>
               Exporter
             </button>
-            <button className="modal-btn" onClick={() => fileInputRef.current?.click()}>
+            <button className="modal-btn" onClick={() => fileInputRef.current!.click()}>
               Importer
             </button>
             <input

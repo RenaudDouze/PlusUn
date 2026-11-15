@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CounterBehaviorSettingsPanel } from './CounterBehaviorSettingsPanel'
+import { todayIsoDate } from '../date'
 import type { Counter, CounterBehavior } from '../types'
 
 type CounterOverrides = Partial<Omit<Counter, 'behavior'>> & Partial<CounterBehavior>
@@ -582,6 +583,63 @@ describe('CounterBehaviorSettingsPanel', () => {
     it("n'affiche pas de moyenne si archivedAt est absent", () => {
       renderPanel({ createdAt: new Date(2026, 7, 1).getTime(), count: 90, archived: true, archivedAt: undefined })
       expect(screen.queryByText(/Moyenne : /)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('états accessibles et erreurs', () => {
+    const fields = [
+      { name: 'valeur actuelle', props: { count: 12 }, current: '12', bad: 'abc', message: 'Nombre entier requis.' },
+      { name: "pas d'incrément", props: { step: 5 }, current: '5', bad: '0', message: 'Nombre entier positif requis.' },
+      { name: 'objectif', props: { target: 5 }, current: '5', bad: '0', message: 'Nombre entier positif requis.' },
+      { name: 'probabilité', props: { oddsDenominator: 5 }, current: '5', bad: '0', message: 'Nombre entier positif requis.' },
+    ]
+
+    it.each(fields)('$name : aria-invalid et message suivent la validité', ({ props, current, bad, message }) => {
+      renderPanel(props)
+      const input = screen.getByDisplayValue(current)
+      expect(input).toHaveAttribute('aria-invalid', 'false')
+      expect(document.querySelector('.modal-error')).not.toBeInTheDocument()
+      fireEvent.change(input, { target: { value: bad } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(input).toHaveAttribute('aria-invalid', 'true')
+      expect(document.querySelector('.modal-error')).toHaveTextContent(message)
+    })
+
+    it('valeur actuelle : accepte une saisie entourée d\'espaces', () => {
+      const { onSetCount } = renderPanel({ count: 12 })
+      const input = screen.getByDisplayValue('12')
+      fireEvent.change(input, { target: { value: ' 42 ' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onSetCount).toHaveBeenCalledWith(42)
+    })
+
+    it('valeur actuelle : rejette des caractères après les chiffres', () => {
+      const { onSetCount } = renderPanel({ count: 12 })
+      const input = screen.getByDisplayValue('12')
+      fireEvent.change(input, { target: { value: '12abc' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onSetCount).not.toHaveBeenCalled()
+      expect(screen.getByText('Nombre entier requis.')).toBeInTheDocument()
+    })
+
+    it("date de début : aria-invalid suit l'erreur et l'effacement du champ la supprime", () => {
+      renderPanel({ startDate: '2026-01-01' })
+      const input = document.querySelector('input[type="date"]') as HTMLInputElement
+      expect(input).toHaveAttribute('aria-invalid', 'false')
+      expect(document.querySelector('.modal-error')).not.toBeInTheDocument()
+      fireEvent.change(input, { target: { value: '9999-12-31' } })
+      expect(input).toHaveAttribute('aria-invalid', 'true')
+      fireEvent.change(input, { target: { value: '' } })
+      expect(input).toHaveAttribute('aria-invalid', 'false')
+      expect(screen.queryByText('La date ne peut pas être dans le futur.')).not.toBeInTheDocument()
+    })
+
+    it("date de début : accepte la date du jour (pas dans le futur)", () => {
+      const { onUpdate } = renderPanel({ startDate: '2026-01-01' })
+      const input = document.querySelector('input[type="date"]') as HTMLInputElement
+      fireEvent.change(input, { target: { value: todayIsoDate() } })
+      expect(onUpdate).toHaveBeenCalledWith({ behavior: expect.objectContaining({ startDate: todayIsoDate() }) })
+      expect(screen.queryByText('La date ne peut pas être dans le futur.')).not.toBeInTheDocument()
     })
   })
 })
