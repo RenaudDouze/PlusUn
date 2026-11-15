@@ -2,8 +2,37 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { Reorder } from 'framer-motion'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CounterCard } from './CounterCard'
+import { CARD_MOTION, PULSE_ANIMATION } from './counterCardMotion'
 import { playDecrementSound, playIncrementSound } from '../sound'
 import type { Counter, CounterAppearance, CounterBehavior } from '../types'
+
+const spies = vi.hoisted(() => ({ pulse: vi.fn(), drag: vi.fn(), notify: vi.fn() }))
+
+// Les contrôles d'animation et de glisser de framer-motion ne laissent rien
+// d'observable dans jsdom : on enveloppe leur méthode `start` pour vérifier
+// qu'elle est bien appelée (et avec quoi), en la laissant s'exécuter.
+vi.mock('framer-motion', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('framer-motion')>()
+  const wrapped = new WeakSet<object>()
+  const wrap = <T extends { start: (...args: never[]) => unknown }>(controls: T, spy: (...args: unknown[]) => void) => {
+    if (!wrapped.has(controls)) {
+      wrapped.add(controls)
+      const original = controls.start.bind(controls) as (...args: unknown[]) => unknown
+      ;(controls as { start: unknown }).start = (...args: unknown[]) => {
+        spy(...args)
+        return original(...args)
+      }
+    }
+    return controls
+  }
+  return {
+    ...actual,
+    useAnimationControls: () => wrap(actual.useAnimationControls(), spies.pulse),
+    useDragControls: () => wrap(actual.useDragControls(), spies.drag),
+  }
+})
+
+vi.mock('../notifications', () => ({ showLocalNotification: spies.notify }))
 
 vi.mock('../sound', () => ({
   playIncrementSound: vi.fn(),
@@ -1185,6 +1214,341 @@ describe('CounterCard', () => {
       renderCard({ step: 5 })
       expect(screen.getByRole('button', { name: 'Incrémenter' })).toHaveTextContent('+5')
       expect(screen.getByRole('button', { name: 'Décrémenter' })).toHaveTextContent('−5')
+    })
+  })
+
+  describe('détails de comportement', () => {
+    const GROUP = (counter: Counter, props: Record<string, unknown>) => (
+      <Reorder.Group as="div" values={[counter]} onReorder={() => {}}>
+        <CounterCard counter={counter} {...(props as Omit<Parameters<typeof CounterCard>[0], 'counter'>)} />
+      </Reorder.Group>
+    )
+    const withCount = (utils: ReturnType<typeof renderCard>, count: number, extra: Partial<Counter> = {}) => {
+      const { rerender, counter, ...handlers } = utils
+      const updated = { ...counter, ...extra, count }
+      rerender(GROUP(updated, handlers))
+      return updated
+    }
+    const getCard = () => screen.getByRole('button', { name: /Compteur 1/ })
+
+    beforeEach(() => {
+      spies.pulse.mockClear()
+      spies.drag.mockClear()
+      spies.notify.mockClear()
+      vi.mocked(playIncrementSound).mockClear()
+      vi.mocked(playDecrementSound).mockClear()
+    })
+
+    describe('célébration', () => {
+      it('répartit les confettis en éventail avec leurs couleurs et délais', () => {
+        const utils = renderCard({ target: 5, count: 4 })
+        withCount(utils, 5)
+        const pieces = Array.from(document.querySelectorAll<HTMLElement>('.counter-confetti'))
+        expect(pieces.map((p) => p.style.getPropertyValue('--angle'))).toEqual(
+          [-90, -65, -40, -15, 15, 40, 65, 90, -110, 110].map((a) => `${a}deg`)
+        )
+        expect(pieces.map((p) => p.style.getPropertyValue('--color'))).toEqual([
+          '#f43f5e', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#3b82f6',
+        ])
+        expect(pieces.map((p) => p.style.getPropertyValue('--delay'))).toEqual(
+          pieces.map((_, i) => `${i * 25}ms`)
+        )
+      })
+
+      it("envoie une notification locale une seule fois à l'atteinte de l'objectif", () => {
+        const utils = renderCard({ target: 5, count: 4, name: 'Mon compteur' })
+        expect(spies.notify).not.toHaveBeenCalled()
+        withCount(utils, 5)
+        expect(spies.notify).toHaveBeenCalledTimes(1)
+        expect(spies.notify).toHaveBeenCalledWith('PlusUn', { body: 'Objectif atteint pour « Mon compteur » 🎉' })
+        act(() => {
+          vi.advanceTimersByTime(1_200)
+        })
+        expect(spies.notify).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    describe('animations', () => {
+      it('décrit le mouvement de la carte', () => {
+        expect(CARD_MOTION).toEqual({
+          dragListener: false,
+          initial: { opacity: 0, scale: 0.9, y: 12 },
+          animate: { opacity: 1, scale: 1, y: 0 },
+          exit: { opacity: 0, scale: 0.85, y: -8 },
+          whileTap: { scale: 0.98 },
+          whileDrag: { scale: 1.03, boxShadow: '0 12px 32px rgba(15, 23, 42, 0.25)', zIndex: 10 },
+          transition: { type: 'spring', stiffness: 300, damping: 26 },
+        })
+        expect(PULSE_ANIMATION).toEqual({
+          scale: [1, 1.16, 0.97, 1],
+          transition: { duration: 0.35, ease: 'easeOut', times: [0, 0.3, 0.7, 1] },
+        })
+      })
+
+      it.each([[undefined], ['default']] as const)('rebondit au changement de valeur (style %s)', (displayStyle) => {
+        const utils = renderCard({ count: 1, displayStyle })
+        expect(spies.pulse).not.toHaveBeenCalled()
+        withCount(utils, 2)
+        expect(spies.pulse).toHaveBeenCalledTimes(1)
+        expect(spies.pulse).toHaveBeenCalledWith(PULSE_ANIMATION)
+      })
+
+      it("ne rebondit pas pour un autre style (qui a sa propre animation) mais joue le son", () => {
+        const utils = renderCard({ count: 1, displayStyle: 'flap' })
+        withCount(utils, 2)
+        expect(spies.pulse).not.toHaveBeenCalled()
+        expect(playIncrementSound).toHaveBeenCalledTimes(1)
+      })
+
+      it("ne calcule pas de taille de police sans la prop fill", () => {
+        const widthSpy = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(320)
+        const heightSpy = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(480)
+        renderCard({ count: 12 })
+        expect((document.querySelector('.counter-value') as HTMLElement).style.fontSize).toBe('')
+        widthSpy.mockRestore()
+        heightSpy.mockRestore()
+      })
+    })
+
+    describe('icônes des panneaux', () => {
+      it.each([
+        ['Régler le comportement du compteur', 'counter-behavior-btn', "Pas d'incrément, objectif, probabilité, date de début, partage, duplication"],
+        ['Personnaliser le compteur', 'counter-settings-btn', "Nom, couleur, style d'affichage, image de fond"],
+        ['Actions du compteur', 'counter-actions-btn', 'Partager, dupliquer, supprimer'],
+      ])('« %s » : classe et infobulle', (label, className, title) => {
+        renderCard()
+        const button = screen.getByRole('button', { name: label })
+        expect(button.className).toBe(className)
+        expect(button).toHaveAttribute('title', title)
+      })
+
+      it.each([
+        ['Régler le comportement du compteur', 'Valeur & réglages « Compteur 1 »'],
+        ['Personnaliser le compteur', 'Personnaliser « Compteur 1 »'],
+        ['Actions du compteur', 'Actions « Compteur 1 »'],
+      ])("« %s » s'ouvre puis se ferme", (label, title) => {
+        renderCard()
+        fireEvent.click(screen.getByRole('button', { name: label }))
+        expect(screen.getByText(title)).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Fermer' }))
+        expect(screen.queryByText(title)).not.toBeInTheDocument()
+      })
+
+      it("ne laisse remonter ni clic ni appui sur l'icône jusqu'à la carte", () => {
+        const { onChange } = renderCard()
+        const seen = vi.fn()
+        document.addEventListener('pointerdown', seen)
+        fireEvent.pointerDown(screen.getByRole('button', { name: 'Actions du compteur' }))
+        document.removeEventListener('pointerdown', seen)
+        expect(seen).not.toHaveBeenCalled()
+        expect(onChange).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('valeur saisie dans le panneau', () => {
+      const openBehavior = () => fireEvent.click(screen.getByRole('button', { name: 'Régler le comportement du compteur' }))
+      const commit = (from: string, to: string) => {
+        const input = screen.getByDisplayValue(from)
+        fireEvent.change(input, { target: { value: to } })
+        fireEvent.keyDown(input, { key: 'Enter' })
+      }
+
+      it('transmet la nouvelle valeur à onSetCount', () => {
+        const { onSetCount } = renderCard({ count: 5 })
+        openBehavior()
+        commit('5', '3')
+        expect(onSetCount).toHaveBeenCalledWith(3)
+      })
+
+      it("une valeur identique compte comme une hausse pour le sens de défilement et le son suivant", () => {
+        const utils = renderCard({ count: 5 })
+        openBehavior()
+        commit('5', '3') // sens : baisse
+        let updated = withCount(utils, 3)
+        expect(playDecrementSound).toHaveBeenCalledTimes(1)
+        fireEvent.keyDown(screen.getByDisplayValue('3'), { key: 'Enter' }) // même valeur
+        withCount({ ...utils, counter: updated }, 4)
+        expect(playIncrementSound).toHaveBeenCalledTimes(1)
+        expect(playDecrementSound).toHaveBeenCalledTimes(1)
+        updated = { ...updated }
+      })
+    })
+
+    describe('nom', () => {
+      it("quitte l'édition en validant avec Entrée", () => {
+        const { onUpdate } = renderCard({ name: 'Ancien' })
+        fireEvent.click(screen.getByText('Ancien'))
+        const input = screen.getByDisplayValue('Ancien')
+        fireEvent.change(input, { target: { value: 'Nouveau' } })
+        fireEvent.keyDown(input, { key: 'Enter' })
+        expect(onUpdate).toHaveBeenCalledWith({ name: 'Nouveau' })
+        expect(screen.queryByLabelText('Renommer le compteur')).not.toBeInTheDocument()
+      })
+
+      it("Échap abandonne l'édition ; une autre touche la laisse ouverte", () => {
+        const { onUpdate } = renderCard({ name: 'Ancien' })
+        fireEvent.click(screen.getByText('Ancien'))
+        const input = screen.getByDisplayValue('Ancien')
+        fireEvent.keyDown(input, { key: 'a' })
+        expect(screen.getByLabelText('Renommer le compteur')).toBeInTheDocument()
+        fireEvent.change(input, { target: { value: 'Brouillon' } })
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(screen.queryByLabelText('Renommer le compteur')).not.toBeInTheDocument()
+        expect(onUpdate).not.toHaveBeenCalled()
+      })
+
+      it('rouvre le champ avec le nom actuel, pas un ancien brouillon', () => {
+        const utils = renderCard({ name: 'Ancien' })
+        fireEvent.click(screen.getByText('Ancien'))
+        fireEvent.change(screen.getByLabelText('Renommer le compteur'), { target: { value: 'Brouillon' } })
+        fireEvent.keyDown(screen.getByLabelText('Renommer le compteur'), { key: 'Escape' })
+        fireEvent.click(screen.getByText('Ancien'))
+        expect(screen.getByLabelText('Renommer le compteur')).toHaveValue('Ancien')
+        fireEvent.keyDown(screen.getByLabelText('Renommer le compteur'), { key: 'Escape' })
+        // Renommé ailleurs (panneau, synchro) : la réouverture reprend le nouveau nom.
+        withCount(utils, 0, { name: 'Renommé ailleurs' })
+        fireEvent.keyDown(screen.getByText('Renommé ailleurs'), { key: 'Enter' })
+        expect(screen.getByLabelText('Renommer le compteur')).toHaveValue('Renommé ailleurs')
+      })
+
+      it("sélectionne tout le texte à l'ouverture du champ", () => {
+        renderCard({ name: 'Ancien' }, { autoEdit: true })
+        const input = screen.getByLabelText('Renommer le compteur') as HTMLInputElement
+        expect(input.selectionStart).toBe(0)
+        expect(input.selectionEnd).toBe('Ancien'.length)
+      })
+
+      it("Entrée et Espace ouvrent l'édition depuis le titre (action par défaut bloquée) ; une autre touche non", () => {
+        renderCard({ name: 'Ancien' })
+        const title = screen.getByText('Ancien')
+        expect(fireEvent.keyDown(title, { key: 'a' })).toBe(true)
+        expect(screen.queryByLabelText('Renommer le compteur')).not.toBeInTheDocument()
+        expect(fireEvent.keyDown(title, { key: ' ' })).toBe(false)
+        expect(screen.getByLabelText('Renommer le compteur')).toBeInTheDocument()
+      })
+
+      it('un titre archivé ne s\'ouvre pas au clavier et explique pourquoi', () => {
+        renderCard({ name: 'Figé', archived: true })
+        const title = screen.getByText('Figé')
+        expect(title).toHaveAttribute('title', 'Compteur archivé : lecture seule')
+        fireEvent.keyDown(title, { key: 'Enter' })
+        expect(screen.queryByLabelText('Renommer le compteur')).not.toBeInTheDocument()
+      })
+
+      it("le titre d'un compteur actif invite à toucher pour renommer", () => {
+        renderCard({ name: 'Ancien' })
+        expect(screen.getByText('Ancien')).toHaveAttribute('title', 'Toucher pour renommer')
+      })
+
+      it("ne laisse pas l'appui sur le titre ni sur le champ remonter à la carte", () => {
+        renderCard({ name: 'Ancien' })
+        const seen = vi.fn()
+        document.addEventListener('pointerdown', seen)
+        fireEvent.pointerDown(screen.getByText('Ancien'))
+        fireEvent.click(screen.getByText('Ancien'))
+        fireEvent.pointerDown(screen.getByLabelText('Renommer le compteur'))
+        document.removeEventListener('pointerdown', seen)
+        expect(seen).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('poignée et clavier de la carte', () => {
+      const handle = () => screen.getByRole('button', { name: 'Réordonner le compteur (flèches Haut/Bas)' })
+
+      it("démarre le glisser à l'appui sans le laisser remonter à la carte", () => {
+        renderCard()
+        const seen = vi.fn()
+        document.addEventListener('pointerdown', seen)
+        fireEvent.pointerDown(handle())
+        document.removeEventListener('pointerdown', seen)
+        expect(spies.drag).toHaveBeenCalledTimes(1)
+        expect(seen).not.toHaveBeenCalled()
+      })
+
+      it('les flèches de la poignée bloquent le défilement et ne remontent pas', () => {
+        renderCard()
+        const seen = vi.fn()
+        document.addEventListener('keydown', seen)
+        expect(fireEvent.keyDown(handle(), { key: 'ArrowUp' })).toBe(false)
+        expect(fireEvent.keyDown(handle(), { key: 'ArrowDown' })).toBe(false)
+        document.removeEventListener('keydown', seen)
+        expect(seen).not.toHaveBeenCalled()
+      })
+
+      it.each(['ArrowUp', 'Enter', ' ', '+', '=', 'ArrowDown', '-'])('la touche « %s » sur la carte bloque l\'action par défaut', (key) => {
+        renderCard()
+        expect(fireEvent.keyDown(getCard(), { key })).toBe(false)
+      })
+
+      it('une autre touche sur la carte laisse faire le navigateur', () => {
+        renderCard()
+        expect(fireEvent.keyDown(getCard(), { key: 'Tab' })).toBe(true)
+      })
+    })
+
+    describe('boutons +/- au clavier et en rafale', () => {
+      it.each([['Décrémenter', -1], ['Incrémenter', 1]] as const)('« %s » : Entrée et Espace lancent la rafale du bon sens', (name, sign) => {
+        for (const key of ['Enter', ' ']) {
+          const { onChange, unmount } = renderCard()
+          const button = screen.getByRole('button', { name })
+          expect(fireEvent.keyDown(button, { key })).toBe(false)
+          act(() => {
+            vi.advanceTimersByTime(350)
+          })
+          expect(onChange).toHaveBeenCalledWith(sign)
+          unmount()
+        }
+      })
+
+      it.each([['Décrémenter', -1], ['Incrémenter', 1]] as const)('« %s » : le relâchement (Entrée ou Espace) applique le tap et bloque l\'action par défaut', (name, sign) => {
+        for (const key of ['Enter', ' ']) {
+          const { onChange, unmount } = renderCard()
+          const button = screen.getByRole('button', { name })
+          expect(fireEvent.keyUp(button, { key })).toBe(false)
+          expect(onChange).toHaveBeenCalledWith(sign)
+          expect(fireEvent.keyUp(button, { key: 'Tab' })).toBe(true)
+          unmount()
+        }
+      })
+
+      it.each(['Décrémenter', 'Incrémenter'])('« %s » : un appui bref au clavier annule la rafale programmée', (name) => {
+        const { onChange } = renderCard()
+        const button = screen.getByRole('button', { name })
+        fireEvent.keyDown(button, { key: 'Enter' })
+        fireEvent.keyUp(button, { key: 'Enter' })
+        act(() => {
+          vi.advanceTimersByTime(1_000)
+        })
+        expect(onChange).toHaveBeenCalledTimes(1)
+      })
+
+      it.each(['Décrémenter', 'Incrémenter'])('« %s » : une répétition clavier tardive ne redémarre pas le minuteur', (name) => {
+        const { onChange } = renderCard()
+        const button = screen.getByRole('button', { name })
+        fireEvent.keyDown(button, { key: 'Enter' })
+        act(() => {
+          vi.advanceTimersByTime(200)
+        })
+        fireEvent.keyDown(button, { key: 'Enter', repeat: true })
+        act(() => {
+          vi.advanceTimersByTime(200)
+        })
+        expect(onChange).toHaveBeenCalledTimes(1)
+      })
+
+      it('après une rafale, le clic de relâchement est ignoré une fois, puis les taps comptent', () => {
+        const { onChange } = renderCard()
+        const plus = screen.getByRole('button', { name: 'Incrémenter' })
+        fireEvent.pointerDown(plus)
+        act(() => {
+          vi.advanceTimersByTime(350)
+        })
+        fireEvent.pointerUp(plus)
+        fireEvent.click(plus)
+        expect(onChange).toHaveBeenCalledTimes(1)
+        fireEvent.click(plus)
+        expect(onChange).toHaveBeenCalledTimes(2)
+      })
     })
   })
 })

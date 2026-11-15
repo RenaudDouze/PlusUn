@@ -22,6 +22,8 @@ export const targets = {
   'src/components/CounterSettingsPanel.tsx': ['src/components/CounterSettingsPanel.test.tsx'],
   'src/components/CounterBehaviorSettingsPanel.tsx': ['src/components/CounterBehaviorSettingsPanel.test.tsx'],
   'src/components/SyncPanel.tsx': ['src/components/SyncPanel.test.tsx'],
+  'src/components/CounterCard.tsx': ['src/components/CounterCard.test.tsx'],
+  'src/components/counterCardMotion.ts': ['src/components/CounterCard.test.tsx'],
   'src/components/Modal.tsx': ['src/components/Modal.test.tsx'],
   'src/components/CounterValueDisplay.tsx': ['src/components/CounterValueDisplay.test.tsx'],
   'src/components/valueDisplayMotion.ts': ['src/components/CounterValueDisplay.test.tsx'],
