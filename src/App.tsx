@@ -91,9 +91,9 @@ function migrateLegacyStorageKey(oldKey: string, newKey: string) {
 // avant que `useLocalStorage` ne lise la clé.
 function migrateCounterShape(key: string) {
   try {
-    const stored = window.localStorage.getItem(key)
-    if (stored === null) return
-    const parsed = JSON.parse(stored)
+    // Clé absente : `getItem` renvoie null, que JSON.parse lit comme `null` ;
+    // `.map` échoue alors juste en dessous, intercepté par le catch.
+    const parsed = JSON.parse(window.localStorage.getItem(key) as string)
     // Pas de vérification explicite Array.isArray : un `parsed` qui n'est pas
     // un tableau fait échouer `.map` juste en dessous, intercepté par le
     // catch (rien à migrer dans ce cas non plus).
@@ -161,11 +161,11 @@ export default function App() {
       if (e.key !== 'Escape') return
       e.preventDefault()
       setMenuOpen(false)
-      menuButtonRef.current?.focus()
+      menuButtonRef.current!.focus()
     }
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node
-      if (menuRef.current?.contains(target) || menuButtonRef.current?.contains(target)) return
+      if (menuRef.current!.contains(target) || menuButtonRef.current!.contains(target)) return
       setMenuOpen(false)
     }
     document.addEventListener('keydown', onKeyDown)
@@ -207,7 +207,8 @@ export default function App() {
   }
   const matchesSearch = (c: Counter) => {
     const query = searchQuery.trim().toLowerCase()
-    return query === '' || c.name.toLowerCase().includes(query)
+    // Requête vide : `includes('')` est toujours vrai, tout reste affiché.
+    return c.name.toLowerCase().includes(query)
   }
 
   // Bascule l'ensemble de la liste (archivés masqués par défaut) ; la
@@ -246,7 +247,7 @@ export default function App() {
   // simple affichage épuré dans l'espace disponible.
   const [focusMode, setFocusMode] = useState(false)
   const focusExitBtnRef = useRef<HTMLButtonElement>(null)
-  // Mémorise qu'on était en mode focus, pour détecter la transition
+  // Mémorise le mode focus du rendu précédent, pour détecter la transition
   // true -> false dans l'effet ci-dessous (comparer à la seule valeur
   // courante de `focusMode` ne suffit pas à savoir d'où l'on vient).
   const wasFocusModeRef = useRef(false)
@@ -259,13 +260,9 @@ export default function App() {
   // déplacement, le focus resterait sur un élément qui vient de disparaître
   // du DOM, perdu jusqu'au prochain Tab.
   useEffect(() => {
-    if (focusMode) {
-      focusExitBtnRef.current?.focus()
-      wasFocusModeRef.current = true
-    } else if (wasFocusModeRef.current) {
-      wasFocusModeRef.current = false
-      menuButtonRef.current?.focus()
-    }
+    if (focusMode) focusExitBtnRef.current!.focus()
+    else if (wasFocusModeRef.current) menuButtonRef.current!.focus()
+    wasFocusModeRef.current = focusMode
   }, [focusMode])
 
   const exitFocusMode = () => {
@@ -304,13 +301,17 @@ export default function App() {
   // Resynchronise l'état si le plein écran natif est quitté autrement que
   // par notre bouton (ex : touche Échap gérée nativement par le navigateur,
   // ou raccourci système).
-  useEffect(() => {
-    const onFullscreenChange = () => {
-      if (!document.fullscreenElement) setDeviceFullscreen(false)
-    }
-    document.addEventListener('fullscreenchange', onFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
-  }, [])
+  useEffect(
+    () => {
+      const onFullscreenChange = () => {
+        if (!document.fullscreenElement) setDeviceFullscreen(false)
+      }
+      document.addEventListener('fullscreenchange', onFullscreenChange)
+      return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+    },
+    // Stryker disable next-line ArrayDeclaration: `[]` et un tableau constant non vide sont équivalents (effet monté une seule fois)
+    [],
+  )
 
   // Applique le thème au document (déjà posé une première fois par le script
   // inline de index.html, pour éviter un flash) et adapte la couleur de la
@@ -345,34 +346,37 @@ export default function App() {
     const last = undoStack[undoStack.length - 1]
     setCounters(last.counters)
     setUndoStack((prev) => prev.slice(0, -1))
+    // Relance le délai dans tous les cas : si la pile se vide, l'effacer une
+    // seconde fois ne change rien.
     clearTimeout(undoTimer.current)
-    if (undoStack.length > 1) {
-      undoTimer.current = setTimeout(() => setUndoStack([]), UNDO_TIMEOUT_MS)
-    }
+    undoTimer.current = setTimeout(() => setUndoStack([]), UNDO_TIMEOUT_MS)
   }
 
   // Import automatique si l'app est ouverte via un lien de partage (?import=...).
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const payload = params.get('import')
-    if (!payload) return
+  useEffect(
+    () => {
+      const params = new URLSearchParams(window.location.search)
+      const payload = params.get('import')
+      if (!payload) return
 
-    const imported = decodeCountersFromParam(payload)
-    const url = new URL(window.location.href)
-    url.searchParams.delete('import')
-    window.history.replaceState({}, '', url.toString())
+      const imported = decodeCountersFromParam(payload)
+      const url = new URL(window.location.href)
+      url.searchParams.delete('import')
+      window.history.replaceState({}, '', url.toString())
 
-    if (!imported || imported.length === 0) return
+      if (!imported || imported.length === 0) return
 
-    setCounters((prev) => {
-      if (prev.length === 0) return imported
-      const replace = window.confirm(
-        `Importer ${imported.length} compteur(s) partagé(s) ?\n\nOK pour remplacer tes ${prev.length} compteur(s) actuel(s), Annuler pour les ajouter à la suite.`
-      )
-      return replace ? imported : [...prev, ...imported]
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+      setCounters((prev) => {
+        if (prev.length === 0) return imported
+        const replace = window.confirm(
+          `Importer ${imported.length} compteur(s) partagé(s) ?\n\nOK pour remplacer tes ${prev.length} compteur(s) actuel(s), Annuler pour les ajouter à la suite.`
+        )
+        return replace ? imported : [...prev, ...imported]
+      })
+    },
+    // Stryker disable next-line ArrayDeclaration: `[]` et un tableau constant non vide sont équivalents (effet monté une seule fois)
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   const addCounter = () => {
     const newCounter: Counter = {
@@ -392,19 +396,22 @@ export default function App() {
 
   // Action rapide depuis un raccourci de l'app installée (?action=new|sync),
   // déclarés dans le manifest PWA (voir vite.config.ts).
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const action = params.get('action')
-    if (!action) return
+  useEffect(
+    () => {
+      const params = new URLSearchParams(window.location.search)
+      const action = params.get('action')
+      if (!action) return
 
-    const url = new URL(window.location.href)
-    url.searchParams.delete('action')
-    window.history.replaceState({}, '', url.toString())
+      const url = new URL(window.location.href)
+      url.searchParams.delete('action')
+      window.history.replaceState({}, '', url.toString())
 
-    if (action === 'new') addCounter()
-    if (action === 'sync') setSyncOpen(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+      if (action === 'new') addCounter()
+      if (action === 'sync') setSyncOpen(true)
+    },
+    // Stryker disable next-line ArrayDeclaration: `[]` et un tableau constant non vide sont équivalents (effet monté une seule fois)
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   // Applique un patch de champs à un seul compteur, identifié par son id.
   // Point d'entrée commun à tous les réglages simples (nom, couleur, pas,
@@ -488,7 +495,7 @@ export default function App() {
   const moveCounter = (id: string, direction: 1 | -1) => {
     const index = sortedCounters.findIndex((c) => c.id === id)
     const targetIndex = index + direction
-    if (index === -1 || targetIndex < 0 || targetIndex >= sortedCounters.length) return
+    if (targetIndex < 0 || targetIndex >= sortedCounters.length) return
     const newOrder = [...sortedCounters]
     ;[newOrder[index], newOrder[targetIndex]] = [newOrder[targetIndex], newOrder[index]]
     reorderVisible(newOrder)

@@ -4,15 +4,17 @@
 import { appendFileSync } from 'node:fs';
 import { targets } from '../../stryker.config.mjs';
 
+// Un fichier trop long pour un seul job est découpé en plages de lignes
+// (`src/App.tsx:1-100`) : chaque plage est un job à part, jamais regroupée.
 const groups = new Map();
 for (const [file, tests] of Object.entries(targets)) {
-  const key = tests.join(',');
+  const key = file.includes(':') ? file : tests.join(',');
   groups.set(key, [...(groups.get(key) || []), file]);
 }
-// Le libellé sert de nom d'artefact : ni `/` ni `:` n'y sont permis.
+// Le libellé sert de nom d'artefact : ni `/` ni `:` n'y sont permis (`:` des plages devient `@`).
 const label = (files) => (files.every((f) => f.startsWith('worker/'))
   ? 'worker'
-  : files.map((f) => f.replace(/^src\//, '').replace(/\.ts$/, '').replaceAll('/', '-')).join('+'));
+  : files.map((f) => f.replace(/^src\//, '').replace(/\.ts$/, '').replaceAll('/', '-').replace(':', '@')).join('+'));
 const include = [...groups.values()].map((files) => ({ name: label(files), mutate: files.join(',') }));
 const matrix = JSON.stringify({ include });
 console.log(matrix);
