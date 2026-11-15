@@ -155,11 +155,11 @@ jobs:
           name: worker-coverage-report
           path: worker/coverage/
           retention-days: 14
-      # Niveau « high » ici (contrairement au « critical » utilisé pour le
-      # front, voir le job `audit` plus bas) : le worker n'a aucune
-      # dépendance de build lourde de type vite-plugin-pwa/workbox, donc rien
-      # n'empêche de viser un niveau plus strict dès maintenant.
-      - run: npm audit --audit-level=high
+      - name: Audit des dépendances de production
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: worker
+      - name: Audit complet (production + développement)
+        run: npm audit --audit-level=high
         working-directory: worker
 
   audit:
@@ -172,15 +172,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # Niveau « critical » et non « high » : une vulnérabilité high existe
-      # actuellement dans la chaîne vite-plugin-pwa → workbox-build → ajv →
-      # fast-uri (GHSA-5jgf-p345-68v8 et consorts), uniquement utilisée au
-      # moment du build pour générer le manifest PWA — jamais exécutée dans
-      # le bundle livré au navigateur. Aucun correctif amont disponible pour
-      # l'instant ; bloquer la CI dessus casserait le pipeline sans qu'on
-      # puisse agir. Dependabot (.github/dependabot.yml) remontera la mise à
-      # jour dès qu'elle existera. À repasser en « high » à ce moment-là.
-      - run: npm audit --audit-level=critical
+      # Production à « high » (et non « moderate » comme les autres dépôts) :
+      # la chaîne vite-plugin-pwa → workbox-build → minimatch remonte des
+      # avis moderate sans correctif sans montée majeure. À repasser en
+      # « moderate » dès que vite-plugin-pwa 1.x les corrige.
+      - name: Audit des dépendances de production
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit complet (production + développement)
+        run: npm audit --audit-level=high
 
   build:
     name: Build de production
