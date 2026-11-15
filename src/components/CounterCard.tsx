@@ -17,6 +17,7 @@ import { daysBetween, formatAveragePerDay, formatDuration, toIsoDate } from '../
 import { playDecrementSound, playIncrementSound } from '../sound'
 import { showLocalNotification } from '../notifications'
 import { sanitizeCounterName } from '../counterName'
+import { CARD_MOTION, PULSE_ANIMATION } from './counterCardMotion'
 import type { Counter } from '../types'
 
 // Angles (en degrés) des particules du confetti, réparties en éventail sur
@@ -182,10 +183,7 @@ export function CounterCard({
     if (direction === 1) playIncrementSound()
     else playDecrementSound()
     if (!isDefaultStyle) return
-    pulseControls.start({
-      scale: [1, 1.16, 0.97, 1],
-      transition: { duration: 0.35, ease: 'easeOut', times: [0, 0.3, 0.7, 1] },
-    })
+    pulseControls.start(PULSE_ANIMATION)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [counter.count, pulseControls])
 
@@ -205,11 +203,12 @@ export function CounterCard({
   // ce champ) : pas de stats affichées plutôt que des valeurs devinées.
   const archivedStartIso = counter.behavior.startDate ?? toIsoDate(counter.createdAt)
   const archivedEndIso = counter.archivedAt !== undefined ? toIsoDate(counter.archivedAt) : null
-  const archivedDuration =
-    counter.archived && archivedEndIso !== null ? formatDuration(archivedStartIso, archivedEndIso) : null
-  const archivedAveragePerDay =
+  const archivedStats =
     counter.archived && archivedEndIso !== null
-      ? formatAveragePerDay(counter.count, daysBetween(archivedStartIso, archivedEndIso))
+      ? {
+          duration: formatDuration(archivedStartIso, archivedEndIso),
+          averagePerDay: formatAveragePerDay(counter.count, daysBetween(archivedStartIso, archivedEndIso)),
+        }
       : null
   // Progression pour le style "anneau" : vers l'objectif libre s'il est
   // défini (le plus explicite), sinon vers le nombre moyen de tentatives —
@@ -223,15 +222,9 @@ export function CounterCard({
       as="article"
       value={counter}
       id={counter.id}
-      dragListener={false}
       dragControls={dragControls}
       layout
-      initial={{ opacity: 0, scale: 0.9, y: 12 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.85, y: -8 }}
-      whileTap={{ scale: 0.98 }}
-      whileDrag={{ scale: 1.03, boxShadow: '0 12px 32px rgba(15, 23, 42, 0.25)', zIndex: 10 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+      {...CARD_MOTION}
       className="counter-card"
       style={{ '--accent': counter.appearance.color } as React.CSSProperties}
       onClick={handleCardClick}
@@ -353,10 +346,9 @@ export function CounterCard({
           onBlur={commitName}
           onKeyDown={(e) => {
             if (e.key === 'Enter') commitName()
-            if (e.key === 'Escape') {
-              setDraftName(counter.name)
-              setEditing(false)
-            }
+            // Pas de setDraftName ici : chaque ouverture du champ (clic, clavier)
+            // réinitialise déjà le brouillon depuis le nom actuel.
+            if (e.key === 'Escape') setEditing(false)
           }}
           maxLength={40}
         />
@@ -375,7 +367,8 @@ export function CounterCard({
           // évite que ce raccourci reste réservé à la souris/au tactile).
           tabIndex={locked ? undefined : 0}
           onKeyDown={(e) => {
-            if (e.target !== e.currentTarget || locked) return
+            // Un archivé n'a pas de tabIndex (donc pas de focus clavier) : garde de sûreté.
+            if (locked) return
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
               setDraftName(counter.name)
@@ -412,10 +405,10 @@ export function CounterCard({
         </div>
       )}
 
-      {archivedDuration !== null && (
+      {archivedStats !== null && (
         <div className="counter-odds-stats">
-          <p className="counter-odds-hint">Durée totale : {archivedDuration}</p>
-          <p className="counter-odds-hint">Moyenne : {archivedAveragePerDay}</p>
+          <p className="counter-odds-hint">Durée totale : {archivedStats.duration}</p>
+          <p className="counter-odds-hint">Moyenne : {archivedStats.averagePerDay}</p>
         </div>
       )}
 
