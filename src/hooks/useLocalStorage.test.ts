@@ -124,4 +124,17 @@ describe('useLocalStorage', () => {
       expect(result.current[0]).toBe('nouvelle-valeur')
     })
   })
+
+  it("suit la nouvelle clé quand elle change (et ignore l'ancienne) pour les changements d'un autre onglet", () => {
+    const { result, rerender } = renderHook(({ k }) => useLocalStorage(k, 'défaut'), { initialProps: { k: 'clé-a' } })
+    rerender({ k: 'clé-b' })
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'clé-a', newValue: JSON.stringify('ancienne') }))
+    })
+    expect(result.current[0]).not.toBe('ancienne')
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'clé-b', newValue: JSON.stringify('nouvelle') }))
+    })
+    expect(result.current[0]).toBe('nouvelle')
+  })
 })

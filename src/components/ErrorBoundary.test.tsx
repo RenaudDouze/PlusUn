@@ -54,7 +54,11 @@ describe('ErrorBoundary', () => {
         <Boom />
       </ErrorBoundary>
     )
-    expect(consoleErrorSpy).toHaveBeenCalled()
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'Erreur rattrapée par ErrorBoundary :',
+      expect.objectContaining({ message: 'boom' }),
+      expect.anything()
+    )
   })
 
   it('le `retry` passé au secours recharge la page', () => {

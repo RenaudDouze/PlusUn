@@ -78,6 +78,56 @@ describe('Modal', () => {
     expect(outerHandler).not.toHaveBeenCalled()
   })
 
+  it("un clic sur l'arrière-plan ne remonte pas aux parents React du portail (la carte)", () => {
+    const parentClick = vi.fn()
+    render(
+      <div onClick={parentClick}>
+        <Modal title="T" onClose={vi.fn()} accentColor="#2563eb">
+          <p>Contenu</p>
+        </Modal>
+      </div>
+    )
+    fireEvent.click(document.querySelector('.modal-overlay')!)
+    expect(parentClick).not.toHaveBeenCalled()
+  })
+
+  it('un pointerdown dans le panneau ne remonte pas aux parents React du portail', () => {
+    const parentPointerDown = vi.fn()
+    render(
+      <div onPointerDown={parentPointerDown}>
+        <Modal title="T" onClose={vi.fn()} accentColor="#2563eb">
+          <p>Contenu</p>
+        </Modal>
+      </div>
+    )
+    fireEvent.pointerDown(document.querySelector('.modal-panel')!)
+    expect(parentPointerDown).not.toHaveBeenCalled()
+  })
+
+  it("n'est pas fermée par une autre touche que Échap", () => {
+    const { onClose } = renderModal()
+    fireEvent.keyDown(document, { key: 'Enter' })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('appelle le dernier onClose reçu (et lui seul) à Échap', () => {
+    const first = vi.fn()
+    const second = vi.fn()
+    const { rerender } = render(
+      <Modal title="T" onClose={first} accentColor="#2563eb">
+        <p>Contenu</p>
+      </Modal>
+    )
+    rerender(
+      <Modal title="T" onClose={second} accentColor="#2563eb">
+        <p>Contenu</p>
+      </Modal>
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledTimes(1)
+  })
+
   it('ferme avec la touche Échap', () => {
     const { onClose } = renderModal()
     fireEvent.keyDown(document, { key: 'Escape' })
@@ -96,6 +146,7 @@ describe('Modal', () => {
       renderModal({ title: 'Un titre précis' })
       const panel = screen.getByRole('dialog', { name: 'Un titre précis' })
       expect(panel).toHaveAttribute('aria-modal', 'true')
+      expect(panel).toHaveAttribute('tabindex', '-1')
     })
 
     it('déplace le focus dans le panneau à l’ouverture (sur son premier élément focusable)', () => {

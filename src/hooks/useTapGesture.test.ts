@@ -64,4 +64,23 @@ describe('useTapGesture', () => {
     expect(bump).toHaveBeenCalledTimes(1)
     expect(bump).toHaveBeenCalledWith(1)
   })
+
+  it('compte comme un tap un relâchement exactement à la distance de tolérance', () => {
+    const bump = vi.fn()
+    const { result } = renderHook(() => useTapGesture(bump))
+    act(() => result.current.onPointerDown(pointerEvent(20, 20)))
+    act(() => result.current.onPointerUp(pointerEvent(30, 20)))
+    expect(bump).toHaveBeenCalledTimes(1)
+  })
+
+  it('un clic natif après un tap déjà compté est ignoré une seule fois', () => {
+    const bump = vi.fn()
+    const { result } = renderHook(() => useTapGesture(bump))
+    act(() => result.current.onPointerDown(pointerEvent(20, 20)))
+    act(() => result.current.onPointerUp(pointerEvent(20, 20)))
+    act(() => result.current.onClick())
+    expect(bump).toHaveBeenCalledTimes(1)
+    act(() => result.current.onClick())
+    expect(bump).toHaveBeenCalledTimes(2)
+  })
 })

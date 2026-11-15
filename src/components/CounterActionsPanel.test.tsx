@@ -105,6 +105,29 @@ describe('CounterActionsPanel', () => {
       expect(screen.getByText('Copié')).toBeInTheDocument()
     })
 
+    it('repousse le retour au libellé "Partager" quand on copie une seconde fois', async () => {
+      vi.stubGlobal('navigator', {
+        ...navigator,
+        share: undefined,
+        clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+      })
+      renderPanel()
+      await act(async () => {
+        fireEvent.click(screen.getByText('Partager ce compteur'))
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(1500)
+      })
+      await act(async () => {
+        fireEvent.click(screen.getByText('Copié'))
+      })
+      // 1,5 s + 1 s : le premier délai (2 s) est écoulé, pas le second.
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(screen.getByText('Copié')).toBeInTheDocument()
+    })
+
     it('revient au libellé "Partager" après le délai', async () => {
       vi.stubGlobal('navigator', {
         ...navigator,
@@ -183,6 +206,7 @@ describe('CounterActionsPanel', () => {
       const sharedFile = shareMock.mock.calls[0][0].files[0] as File
       expect(sharedFile.name).toBe('Pompes.png')
       expect(sharedFile.type).toBe('image/png')
+      expect(sharedFile.size).toBe(1)
       expect(createObjectURLSpy).not.toHaveBeenCalled()
       expect(screen.getByText('Partager en image')).toBeInTheDocument()
     })
@@ -235,6 +259,25 @@ describe('CounterActionsPanel', () => {
         vi.advanceTimersByTime(2600)
       })
       expect(screen.getByText('Partager en image')).toBeInTheDocument()
+    })
+
+    it("repousse la disparition de l'erreur quand elle se reproduit", async () => {
+      mockedCounterShareImageBlob.mockResolvedValue(null)
+      renderPanel()
+      await act(async () => {
+        fireEvent.click(screen.getByText('Partager en image'))
+      })
+      act(() => {
+        vi.advanceTimersByTime(1500)
+      })
+      await act(async () => {
+        fireEvent.click(screen.getByText('Erreur'))
+      })
+      // 1,5 s + 1,5 s : le premier délai (2,5 s) est écoulé, pas le second.
+      act(() => {
+        vi.advanceTimersByTime(1500)
+      })
+      expect(screen.getByText('Erreur')).toBeInTheDocument()
     })
 
     it('désactive le bouton pendant la génération, empêchant un second clic', async () => {
@@ -354,6 +397,19 @@ describe('CounterActionsPanel', () => {
       fireEvent.click(screen.getByText('Supprimer ce compteur'))
       fireEvent.click(screen.getByText('Confirmer la suppression'))
       expect(onDelete).toHaveBeenCalledTimes(1)
+    })
+
+    it('ne revient pas au libellé initial après la confirmation, même après le délai', () => {
+      renderPanel()
+      fireEvent.click(screen.getByText('Supprimer ce compteur'))
+      act(() => {
+        vi.advanceTimersByTime(2000)
+      })
+      fireEvent.click(screen.getByText('Confirmer la suppression'))
+      act(() => {
+        vi.advanceTimersByTime(600)
+      })
+      expect(screen.getByText('Confirmer la suppression')).toBeInTheDocument()
     })
 
     it('annule la confirmation après le délai', () => {

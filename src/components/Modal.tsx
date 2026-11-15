@@ -53,7 +53,6 @@ export function Modal({ title, onClose, accentColor, children }: ModalProps) {
         // couleur réelle de ce compteur.
         style={{ '--accent': accentColor } as React.CSSProperties}
         onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="modal-panel-header">
           <h2 id={titleId}>{title}</h2>

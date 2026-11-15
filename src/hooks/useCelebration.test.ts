@@ -58,4 +58,25 @@ describe('useCelebration', () => {
     rerender({ count: 11, target: 10 })
     expect(result.current).toBe(false)
   })
+
+  it('ne célèbre jamais sans objectif, même quand le compteur monte beaucoup', () => {
+    const { result, rerender } = renderHook(({ count, target }) => useCelebration(count, target), {
+      initialProps: { count: 0, target: undefined as number | undefined },
+    })
+    rerender({ count: 1_000_000, target: undefined })
+    expect(result.current).toBe(false)
+  })
+
+  it('repousse la fin de la célébration quand l’objectif est franchi une seconde fois', () => {
+    const { result, rerender } = renderHook(({ count, target }) => useCelebration(count, target), {
+      initialProps: { count: 9, target: 10 },
+    })
+    rerender({ count: 10, target: 10 })
+    act(() => vi.advanceTimersByTime(600))
+    rerender({ count: 9, target: 10 })
+    rerender({ count: 10, target: 10 })
+    // 600 ms + 600 ms : le premier délai (1100 ms) est écoulé, pas le second.
+    act(() => vi.advanceTimersByTime(600))
+    expect(result.current).toBe(true)
+  })
 })
