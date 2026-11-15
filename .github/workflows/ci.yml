@@ -75,11 +75,26 @@ jobs:
           path: playwright-report/
           retention-days: 14
 
-  mutation-testing-shard:
-    name: Mutation testing (logique pure) — lot ${{ matrix.shard }}
+  mutation-testing-plan:
+    name: Mutation testing — plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # Un job par module, d'après les cibles de stryker.config.mjs.
+      - id: plan
+        run: node .github/scripts/mutation-matrix.mjs
+
+  mutation-testing-module:
+    name: Mutation testing — ${{ matrix.name }}
+    needs: mutation-testing-plan
     strategy:
-      matrix:
-        shard: [1, 2]
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.mutation-testing-plan.outputs.matrix) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -88,29 +103,33 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - id: files
-        run: node .github/scripts/mutation-shard-files.mjs
+      # Seuil bloquant à 100 % : un seul mutant survivant fait échouer le job.
+      - run: npx stryker run
         env:
-          SHARD: ${{ matrix.shard }}
-      - run: npx stryker run --mutate "${{ steps.files.outputs.files }}"
+          MUTATE: ${{ matrix.mutate }}
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mutation-report-${{ matrix.shard }}
+          name: mutation-report-${{ matrix.name }}
           path: reports/mutation/
           retention-days: 14
 
-  # Agrège les 2 lots sous un seul check nommé « Mutation testing (logique
-  # pure) », comme avant la parallélisation : c'est ce nom exact que
-  # référencent les required status checks du dépôt (voir README.md), et un
-  # renommage aurait cassé la protection de branche sans qu'aucun réglage
-  # GitHub ne l'indique dans ce repo.
+  # Un seul check stable « Mutation testing (logique pure) » pour la protection
+  # de branche, quel que soit le nombre de modules.
   mutation-testing:
     name: Mutation testing (logique pure)
-    needs: mutation-testing-shard
+    needs: mutation-testing-module
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Les 2 lots de mutation testing sont passés."
+      - name: Tous les modules à 100 %
+        env:
+          RESULT: ${{ needs.mutation-testing-module.result }}
+        run: |
+          if [ "$RESULT" != "success" ]; then
+            echo "::error::Mutation testing : au moins un module sous 100 % ($RESULT)."
+            exit 1
+          fi
 
   worker-tests:
     name: Worker de synchronisation
