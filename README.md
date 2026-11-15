@@ -103,11 +103,12 @@ npm run preview
   `src/shareCard.ts`, `src/counterName.ts`, `src/archiveStats.ts`) — un score
   de 100% strict sur les composants React (drag & drop, animations, QR
   code...) n'est pas un objectif réaliste (mutants équivalents, contenu
-  visuel difficile à mutation-tester utilement). En CI cette liste est
-  répartie automatiquement (`.github/scripts/mutation-shard-files.mjs`) sur 2
-  jobs en parallèle pour réduire le temps total — la liste elle-même reste la
-  seule source de vérité, ajouter un module à `stryker.config.mjs` suffit,
-  aucun autre fichier à mettre à jour.
+  visuel difficile à mutation-tester utilement). En CI, un job par module
+  est lancé en parallèle d'après `targets` (en tête de `stryker.config.mjs`,
+  qui associe chaque module aux seuls tests qui tuent ses mutants ;
+  `.github/scripts/mutation-matrix.mjs` en déduit la matrice) : ajouter un
+  module à `targets` suffit, aucun autre fichier à mettre à jour.
+  Localement : `MUTATE=src/odds.ts npm run test:mutation` pour un seul module.
 - **Tests fonctionnels** : `e2e/` couvre les parcours de base, les
   fonctionnalités avancées (probabilité, date, glisser-déposer), la
   synchronisation/partage, et le fonctionnement PWA/hors-ligne. En CI, la
@@ -127,8 +128,8 @@ sont pas au vert, active les *required status checks* du dépôt :
 `Linter`, `Vérification des types`, `Tests unitaires + couverture`, `Tests
 fonctionnels (Playwright)`, `Mutation testing (logique pure)` et `Build de
 production`. En interne, `Mutation testing (logique pure)` est un job
-d'agrégation qui ne fait qu'attendre les 2 lots parallèles
-(`Mutation testing (logique pure) — lot 1/2`, voir `ci.yml`) — le required
+de synthèse qui échoue si un des jobs par module
+(`Mutation testing — <module>`, voir `ci.yml`) est sous 100 % — le required
 status check garde ce nom stable, à ne surtout pas renommer sans mettre à
 jour la protection de branche en même temps.
 
