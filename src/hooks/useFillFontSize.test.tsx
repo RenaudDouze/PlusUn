@@ -72,4 +72,59 @@ describe('useFillFontSize', () => {
     rerender(<Harness active digitsSource={345} />) // 3 chiffres désormais
     expect(instantiations).toBe(2)
   })
+
+  it("n'applique rien si seule la largeur mesurée est nulle", () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(0)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(480)
+    const { getByTestId } = render(<Harness active digitsSource={12} />)
+    expect(getByTestId('target').style.fontSize).toBe('')
+  })
+
+  it("n'applique rien si seule la hauteur mesurée est nulle", () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(320)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(0)
+    const { getByTestId } = render(<Harness active digitsSource={12} />)
+    expect(getByTestId('target').style.fontSize).toBe('')
+  })
+
+  it('est limitée par la largeur : 320 px pour 2 chiffres', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(320)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(480)
+    const { getByTestId } = render(<Harness active digitsSource={12} />)
+    expect(parseFloat(getByTestId('target').style.fontSize)).toBeCloseTo(320 / (2 * 0.62), 3)
+  })
+
+  it('est limitée par la hauteur : 85 % de la hauteur disponible', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1000)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(100)
+    const { getByTestId } = render(<Harness active digitsSource={12} />)
+    expect(parseFloat(getByTestId('target').style.fontSize)).toBeCloseTo(85, 3)
+  })
+
+  it('redevient vide quand le hook est désactivé après avoir mesuré', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(320)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(480)
+    const { getByTestId, rerender } = render(<Harness active digitsSource={12} />)
+    expect(getByTestId('target').style.fontSize).not.toBe('')
+    rerender(<Harness active={false} digitsSource={12} />)
+    expect(getByTestId('target').style.fontSize).toBe('')
+  })
+
+  it("observe l'élément et déconnecte l'observateur au démontage", () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(320)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(480)
+    const observe = vi.fn()
+    const disconnect = vi.fn()
+    class TrackedResizeObserver {
+      observe = observe
+      unobserve = vi.fn()
+      disconnect = disconnect
+    }
+    vi.stubGlobal('ResizeObserver', TrackedResizeObserver)
+    const { getByTestId, unmount } = render(<Harness active digitsSource={12} />)
+    expect(observe).toHaveBeenCalledWith(getByTestId('target'))
+    expect(disconnect).not.toHaveBeenCalled()
+    unmount()
+    expect(disconnect).toHaveBeenCalledTimes(1)
+  })
 })

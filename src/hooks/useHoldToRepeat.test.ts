@@ -61,4 +61,25 @@ describe('useHoldToRepeat', () => {
     act(() => vi.advanceTimersByTime(350))
     expect(bump).toHaveBeenLastCalledWith(-1)
   })
+
+  it("annule le maintien en cours quand on relâche avant le délai", () => {
+    const bump = vi.fn()
+    const { result } = renderHook(() => useHoldToRepeat(bump))
+    act(() => result.current.startHold(1))
+    act(() => vi.advanceTimersByTime(200))
+    act(() => result.current.stopHold())
+    act(() => vi.advanceTimersByTime(1000))
+    expect(bump).not.toHaveBeenCalled()
+  })
+
+  it('un nouvel appui remplace le précédent au lieu de s’y ajouter', () => {
+    const bump = vi.fn()
+    const { result } = renderHook(() => useHoldToRepeat(bump))
+    act(() => result.current.startHold(1))
+    act(() => vi.advanceTimersByTime(200))
+    act(() => result.current.startHold(-1))
+    act(() => vi.advanceTimersByTime(350))
+    expect(bump).toHaveBeenCalledTimes(1)
+    expect(bump).toHaveBeenCalledWith(-1)
+  })
 })

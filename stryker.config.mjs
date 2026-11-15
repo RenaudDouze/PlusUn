@@ -17,6 +17,20 @@ export const targets = {
   'src/shareCard.ts': ['src/shareCard.test.ts'],
   'src/counterName.ts': ['src/counterName.test.ts'],
   'src/archiveStats.ts': ['src/archiveStats.test.ts'],
+  'src/components/CounterActionsPanel.tsx': ['src/components/CounterActionsPanel.test.tsx'],
+  'src/components/ErrorBoundary.tsx': ['src/components/ErrorBoundary.test.tsx'],
+  'src/components/Modal.tsx': ['src/components/Modal.test.tsx'],
+  'src/components/Odometer.tsx': ['src/components/Odometer.test.tsx'],
+  'src/components/odometerMotion.ts': ['src/components/Odometer.test.tsx'],
+  'src/components/PanelNav.tsx': ['src/components/PanelNav.test.tsx'],
+  'src/hooks/useCelebration.ts': ['src/hooks/useCelebration.test.ts'],
+  'src/hooks/useFillFontSize.ts': ['src/hooks/useFillFontSize.test.tsx'],
+  'src/hooks/useFocusTrap.ts': ['src/hooks/useFocusTrap.test.tsx'],
+  'src/hooks/useHoldToRepeat.ts': ['src/hooks/useHoldToRepeat.test.ts'],
+  'src/hooks/useLocalStorage.ts': ['src/hooks/useLocalStorage.test.ts'],
+  'src/hooks/usePositiveIntField.ts': ['src/hooks/usePositiveIntField.test.ts'],
+  'src/hooks/useSystemDarkMode.ts': ['src/hooks/useSystemDarkMode.test.ts'],
+  'src/hooks/useTapGesture.ts': ['src/hooks/useTapGesture.test.ts'],
 };
 
 const selected = process.env.MUTATE ? process.env.MUTATE.split(',') : Object.keys(targets);

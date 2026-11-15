@@ -24,13 +24,11 @@ export function usePositiveIntField(value: number | undefined, onCommit: (value:
   const commit = () => {
     const trimmed = draft.trim()
     if (trimmed === '') {
-      setError(null)
       onCommit(undefined)
       return
     }
     const parsed = parsePositiveInt(trimmed)
     if (parsed !== undefined) {
-      setError(null)
       onCommit(parsed)
     } else {
       // Laisse la saisie invalide affichée (plutôt que de revenir à la

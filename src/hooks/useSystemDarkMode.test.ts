@@ -72,4 +72,22 @@ describe('useSystemDarkMode', () => {
     unmount()
     expect(mql.listenerCount).toBe(0)
   })
+
+  it('interroge la préférence de thème sombre et écoute son évènement « change »', () => {
+    const add = vi.spyOn(mql, 'addEventListener')
+    const remove = vi.spyOn(mql, 'removeEventListener')
+    const { unmount } = renderHook(() => useSystemDarkMode())
+    expect(matchMediaSpy).toHaveBeenCalledWith('(prefers-color-scheme: dark)')
+    expect(add).toHaveBeenCalledWith('change', expect.any(Function))
+    unmount()
+    expect(remove).toHaveBeenCalledWith('change', expect.any(Function))
+  })
+
+  it("ne se réabonne pas à chaque rendu", () => {
+    const add = vi.spyOn(mql, 'addEventListener')
+    const { rerender } = renderHook(() => useSystemDarkMode())
+    rerender()
+    rerender()
+    expect(add).toHaveBeenCalledTimes(1)
+  })
 })

@@ -28,6 +28,15 @@ describe('PanelNav', () => {
     expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument()
   })
 
+  it('sépare les deux liens par un seul séparateur, placé avant le second', () => {
+    const { container } = render(<PanelNav current="personnalisation" onNavigate={vi.fn()} />)
+    const items = container.querySelectorAll('.panel-nav-item')
+    expect(items).toHaveLength(2)
+    expect(items[0].querySelector('.panel-nav-sep')).toBeNull()
+    expect(items[1].querySelector('.panel-nav-sep')).not.toBeNull()
+    expect(container.querySelectorAll('.panel-nav-sep')).toHaveLength(1)
+  })
+
   it('appelle onNavigate avec la bonne cible au clic', () => {
     const onNavigate = vi.fn()
     render(<PanelNav current="personnalisation" onNavigate={onNavigate} />)

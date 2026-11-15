@@ -9,7 +9,7 @@ interface ErrorBoundaryProps {
 }
 
 interface ErrorBoundaryState {
-  hasError: boolean
+  error: Error | null
 }
 
 /** Filet de sécurité générique : sans lui, une exception non rattrapée
@@ -24,10 +24,10 @@ interface ErrorBoundaryState {
  * rattrape pas (il ne gère que l'attente, pas l'échec) — d'où ce filet
  * séparé plutôt qu'un simple `fallback` de `Suspense`. */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false }
+  state: ErrorBoundaryState = { error: null }
 
-  static getDerivedStateFromError(): ErrorBoundaryState {
-    return { hasError: true }
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error }
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
@@ -35,7 +35,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   render() {
-    if (this.state.hasError) {
+    if (this.state.error !== null) {
       return this.props.fallback(() => window.location.reload())
     }
     return this.props.children

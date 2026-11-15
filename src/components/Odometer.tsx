@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
+import { digitMotion } from './odometerMotion'
 
 interface DigitProps {
   char: string
@@ -12,10 +13,7 @@ function Digit({ char, direction }: DigitProps) {
         <motion.span
           key={char}
           className="odometer-digit-inner"
-          initial={{ y: direction * 32, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: -direction * 32, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+          {...digitMotion(direction)}
         >
           {char}
         </motion.span>

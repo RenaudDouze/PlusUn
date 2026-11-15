@@ -99,4 +99,22 @@ describe('usePositiveIntField', () => {
     act(() => result.current.onBlur())
     expect(result.current.error).toBe('Nombre entier positif requis.')
   })
+
+  it("rejette une saisie qui commence par des caractères non numériques mais finit par un nombre", () => {
+    const onCommit = vi.fn()
+    const { result } = renderHook(() => usePositiveIntField(undefined, onCommit))
+    act(() => result.current.onChange(changeEvent('12a7')))
+    act(() => result.current.onBlur())
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(result.current.error).toBe('Nombre entier positif requis.')
+  })
+
+  it("efface l'erreur dès que la saisie change", () => {
+    const { result } = renderHook(() => usePositiveIntField(undefined, vi.fn()))
+    act(() => result.current.onChange(changeEvent('abc')))
+    act(() => result.current.onBlur())
+    expect(result.current.error).toBe('Nombre entier positif requis.')
+    act(() => result.current.onChange(changeEvent('ab')))
+    expect(result.current.error).toBeNull()
+  })
 })

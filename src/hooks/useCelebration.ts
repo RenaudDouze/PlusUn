@@ -18,8 +18,9 @@ export function useCelebration(count: number, target: number | undefined): boole
   useEffect(() => {
     const previous = previousCount.current
     previousCount.current = count
-    if (target === undefined) return
-    if (previous < target && count >= target) {
+    // Sans objectif défini, il est inatteignable : aucune célébration.
+    const goal = target ?? Infinity
+    if (previous < goal && count >= goal) {
       setCelebrating(true)
       clearTimeout(celebrateTimer.current)
       celebrateTimer.current = setTimeout(() => setCelebrating(false), CELEBRATION_DURATION_MS)
