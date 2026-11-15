@@ -2,8 +2,14 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import QRCode from 'qrcode'
 import { SyncPanel } from './SyncPanel'
+import { buildShareUrl } from '../sync'
 import type { UseRemoteSyncResult } from '../hooks/useRemoteSync'
 import type { Counter } from '../types'
+
+vi.mock('../sync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../sync')>()
+  return { ...actual, buildShareUrl: vi.fn(actual.buildShareUrl) }
+})
 
 vi.mock('qrcode', () => ({
   default: {
@@ -559,6 +565,217 @@ describe('SyncPanel', () => {
       unmount()
       expect(trigger).toHaveFocus()
       trigger.remove()
+    })
+  })
+
+  describe('détails de comportement', () => {
+    const renderPanel = (props: Partial<Parameters<typeof SyncPanel>[0]> = {}) =>
+      render(<SyncPanel counters={[]} onClose={vi.fn()} onImport={vi.fn()} remoteSync={makeRemoteSync()} {...props} />)
+
+    it('génère le QR code avec les réglages attendus', async () => {
+      renderPanel({ counters: [makeCounter()] })
+      await waitFor(() => expect(toDataURLMock).toHaveBeenCalled())
+      expect(toDataURLMock).toHaveBeenCalledWith(expect.stringContaining('http'), {
+        scale: 6,
+        margin: 2,
+        color: { dark: '#0f172a', light: '#ffffff' },
+      })
+    })
+
+    it('régénère le QR code quand les compteurs changent', async () => {
+      const { rerender } = renderPanel({ counters: [makeCounter()] })
+      await waitFor(() => expect(toDataURLMock).toHaveBeenCalledTimes(1))
+      toDataURLMock.mockResolvedValue('data:image/png;base64,second')
+      rerender(
+        <SyncPanel counters={[makeCounter({ name: 'Autre' })]} onClose={vi.fn()} onImport={vi.fn()} remoteSync={makeRemoteSync()} />
+      )
+      await waitFor(() =>
+        expect((screen.getByAltText('QR code de tes compteurs') as HTMLImageElement).src).toBe('data:image/png;base64,second')
+      )
+      expect(toDataURLMock).toHaveBeenCalledTimes(2)
+    })
+
+    it("retire le QR code quand il n'y a plus de compteur", async () => {
+      const { rerender } = renderPanel({ counters: [makeCounter()] })
+      await screen.findByAltText('QR code de tes compteurs')
+      rerender(<SyncPanel counters={[]} onClose={vi.fn()} onImport={vi.fn()} remoteSync={makeRemoteSync()} />)
+      expect(screen.queryByAltText('QR code de tes compteurs')).not.toBeInTheDocument()
+      expect(screen.getByText('Ajoute au moins un compteur pour générer un QR code.')).toBeInTheDocument()
+    })
+
+    it("efface l'erreur de QR code quand il n'y a plus de compteur", async () => {
+      toDataURLMock.mockRejectedValue(new Error('overflow'))
+      const { rerender } = renderPanel({ counters: [makeCounter()] })
+      await screen.findByText(/Trop de compteurs pour un QR code/)
+      rerender(<SyncPanel counters={[]} onClose={vi.fn()} onImport={vi.fn()} remoteSync={makeRemoteSync()} />)
+      expect(screen.queryByText(/Trop de compteurs pour un QR code/)).not.toBeInTheDocument()
+      expect(screen.getByText('Ajoute au moins un compteur pour générer un QR code.')).toBeInTheDocument()
+    })
+
+    it('retire un QR code précédent quand la génération suivante échoue', async () => {
+      const { rerender } = renderPanel({ counters: [makeCounter()] })
+      await screen.findByAltText('QR code de tes compteurs')
+      toDataURLMock.mockRejectedValue(new Error('overflow'))
+      rerender(
+        <SyncPanel counters={[makeCounter({ name: 'Autre' })]} onClose={vi.fn()} onImport={vi.fn()} remoteSync={makeRemoteSync()} />
+      )
+      await screen.findByText(/Trop de compteurs pour un QR code/)
+      expect(screen.queryByAltText('QR code de tes compteurs')).not.toBeInTheDocument()
+    })
+
+    it('Échap appelle le dernier onClose reçu', () => {
+      const first = vi.fn()
+      const second = vi.fn()
+      const { rerender } = renderPanel({ onClose: first })
+      rerender(<SyncPanel counters={[]} onClose={second} onImport={vi.fn()} remoteSync={makeRemoteSync()} />)
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(second).toHaveBeenCalledTimes(1)
+      expect(first).not.toHaveBeenCalled()
+    })
+
+    it('porte tabindex -1 sur la boîte de dialogue', () => {
+      renderPanel()
+      expect(screen.getByRole('dialog')).toHaveAttribute('tabindex', '-1')
+    })
+
+    it("ne montre ni erreur ni message d'erreur sans erreur", () => {
+      renderPanel()
+      expect(document.querySelector('.modal-error')).not.toBeInTheDocument()
+    })
+
+    it('demande confirmation avec le nombre de compteurs actuels et importés', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      renderPanel({ counters: [makeCounter()] })
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement
+      const file = new File([JSON.stringify([{ name: 'A', count: 1 }, { name: 'B', count: 2 }])], 'b.json', {
+        type: 'application/json',
+      })
+      await act(async () => {
+        fireEvent.change(input, { target: { files: [file] } })
+      })
+      expect(confirmSpy).toHaveBeenCalledWith(
+        'Remplacer les 1 compteur(s) actuel(s) par les 2 importé(s) ?\n\nAnnuler pour les ajouter à la place.'
+      )
+    })
+
+    it("ignore un changement d'input sans liste de fichiers", async () => {
+      const onImport = vi.fn()
+      renderPanel({ onImport })
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement
+      await act(async () => {
+        fireEvent.change(input, { target: { files: null } })
+      })
+      expect(onImport).not.toHaveBeenCalled()
+    })
+
+    describe('avec un worker configuré', () => {
+      beforeEach(() => {
+        vi.stubEnv('VITE_SYNC_WORKER_URL', 'https://sync.example.workers.dev')
+      })
+      afterEach(() => {
+        vi.unstubAllEnvs()
+      })
+
+      const openJoin = () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Saisir un code' }))
+        return screen.getByPlaceholderText('XXXX XXXX')
+      }
+
+      it("avertit que le code n'est pas un mot de passe", () => {
+        renderPanel()
+        expect(screen.getByText(/le code n'est pas un mot de passe/)).toBeInTheDocument()
+      })
+
+      it("n'avertit pas sans worker configuré", () => {
+        vi.unstubAllEnvs()
+        vi.stubEnv('VITE_SYNC_WORKER_URL', '')
+        renderPanel()
+        expect(screen.queryByText(/le code n'est pas un mot de passe/)).not.toBeInTheDocument()
+      })
+
+      it("expose l'état de synchro par classe et libellé vide quand désactivé", () => {
+        renderPanel({ remoteSync: makeRemoteSync({ code: 'ABCDEFGH', status: 'disabled' }) })
+        const status = document.querySelector('.sync-status')
+        expect(status?.className).toBe('sync-status sync-status--disabled')
+        expect(status?.textContent).toBe('')
+      })
+
+      it("n'affiche pas le message d'erreur du hook quand l'état n'est pas en erreur", () => {
+        renderPanel({ remoteSync: makeRemoteSync({ code: 'ABCDEFGH', status: 'synced', errorMessage: 'Ancienne panne' }) })
+        expect(screen.queryByText('Ancienne panne')).not.toBeInTheDocument()
+        expect(screen.getByText('Synchronisé ✓')).toBeInTheDocument()
+      })
+
+      it("n'affiche pas d'erreur de création quand l'état n'est pas en erreur", () => {
+        renderPanel({ remoteSync: makeRemoteSync({ status: 'synced', errorMessage: 'Ancienne panne' }) })
+        expect(screen.queryByText('Ancienne panne')).not.toBeInTheDocument()
+        expect(document.querySelector('.modal-error')).not.toBeInTheDocument()
+      })
+
+      it('« Rejoindre » reste désactivé pour une saisie faite uniquement d\'espaces', () => {
+        renderPanel()
+        fireEvent.change(openJoin(), { target: { value: '   ' } })
+        expect(screen.getByRole('button', { name: 'Rejoindre' })).toBeDisabled()
+      })
+
+      it("Entrée rejoint, mais pas une autre touche", () => {
+        const joinCode = vi.fn().mockResolvedValue('invalid')
+        renderPanel({ remoteSync: makeRemoteSync({ joinCode }) })
+        const input = openJoin()
+        fireEvent.change(input, { target: { value: 'ABCDEFGH' } })
+        fireEvent.keyDown(input, { key: 'a' })
+        expect(joinCode).not.toHaveBeenCalled()
+        fireEvent.keyDown(input, { key: 'Enter' })
+        expect(joinCode).toHaveBeenCalledWith('ABCDEFGH')
+      })
+
+      it('une autre touche que Échap ne referme pas la saisie', () => {
+        renderPanel()
+        const input = openJoin()
+        fireEvent.keyDown(input, { key: 'a' })
+        expect(screen.getByPlaceholderText('XXXX XXXX')).toBeInTheDocument()
+      })
+
+      it("le message précis du hook n'écrase pas les erreurs « invalide » et « introuvable »", async () => {
+        const joinCode = vi.fn().mockResolvedValue('invalid')
+        renderPanel({ remoteSync: makeRemoteSync({ joinCode, errorMessage: 'Failed to fetch' }) })
+        fireEvent.change(openJoin(), { target: { value: 'ABCDEFGH' } })
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: 'Rejoindre' }))
+        })
+        expect(screen.getByText('Code invalide (8 caractères attendus).')).toBeInTheDocument()
+        expect(screen.queryByText('Failed to fetch')).not.toBeInTheDocument()
+      })
+
+      it('une nouvelle tentative réussie efface l\'erreur précédente et vide la saisie', async () => {
+        const joinCode = vi.fn().mockResolvedValueOnce('not-found').mockResolvedValueOnce('joined')
+        renderPanel({ remoteSync: makeRemoteSync({ joinCode }) })
+        fireEvent.change(openJoin(), { target: { value: 'ABCDEFGH' } })
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: 'Rejoindre' }))
+        })
+        expect(screen.getByText('Ce code de synchronisation est introuvable.')).toBeInTheDocument()
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: 'Rejoindre' }))
+        })
+        expect(screen.queryByText('Ce code de synchronisation est introuvable.')).not.toBeInTheDocument()
+        // Le champ est refermé puis vidé : rouvert, il n'a plus l'ancienne saisie.
+        expect(openJoin()).toHaveValue('')
+      })
+
+      it('suggère le code de synchro dès que le lien dépasse 300 caractères (pas à 300 pile)', async () => {
+        const buildMock = vi.mocked(buildShareUrl)
+        buildMock.mockReturnValue('x'.repeat(300))
+        const { unmount } = renderPanel({ counters: [makeCounter()] })
+        await screen.findByAltText('QR code de tes compteurs')
+        expect(screen.queryByText(/reste pratique même quand ce lien devient long/)).not.toBeInTheDocument()
+        unmount()
+        buildMock.mockReturnValue('x'.repeat(301))
+        renderPanel({ counters: [makeCounter()] })
+        await screen.findByAltText('QR code de tes compteurs')
+        expect(screen.getByText(/reste pratique même quand ce lien devient long/)).toBeInTheDocument()
+        buildMock.mockRestore()
+      })
     })
   })
 })

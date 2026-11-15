@@ -597,7 +597,7 @@ describe('useRemoteSync', () => {
         result.current.setCounters([makeCounter({ count: 1 })])
       })
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(2_000)
+        await vi.advanceTimersByTimeAsync(6_000)
       })
       expect(pushSyncState).not.toHaveBeenCalled()
     })
@@ -623,9 +623,370 @@ describe('useRemoteSync', () => {
       expect(result.current.sync.status).toBe('disabled')
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(2_000)
+        await vi.advanceTimersByTimeAsync(6_000)
       })
       expect(pushSyncState).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('détails de comportement', () => {
+    const never = <T,>() => new Promise<T>(() => {})
+    const storeCode = (code = 'ABCDEFGH') => window.localStorage.setItem('+1.sync.code.v1', JSON.stringify(code))
+    const flush = () =>
+      act(async () => {
+        await vi.runOnlyPendingTimersAsync()
+      })
+    const advance = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms)
+      })
+
+    it('démarre en « syncing » quand un code est déjà stocké', () => {
+      storeCode()
+      vi.mocked(fetchSyncState).mockReturnValue(never())
+      const { result } = renderHook(() => useHost(WORKER_URL, []))
+      expect(result.current.sync.status).toBe('syncing')
+    })
+
+    it('applique une version distante sans callback onRemoteUpdate', async () => {
+      storeCode()
+      vi.mocked(fetchSyncState).mockResolvedValue({ version: 10, counters: [makeCounter({ id: 'r' })] })
+      const { result } = renderHook(() => useHost(WORKER_URL, []))
+      // Un seul sondage (pas de passage du temps : un second, sans rien de
+      // neuf, masquerait une erreur levée par le premier).
+      await advance(0)
+      expect(result.current.counters).toEqual([makeCounter({ id: 'r' })])
+      expect(result.current.sync.status).toBe('synced')
+    })
+
+    it("ne repousse pas vers le serveur ce qu'un sondage vient d'appliquer", async () => {
+      storeCode()
+      vi.mocked(fetchSyncState).mockResolvedValue({ version: 10, counters: [makeCounter({ id: 'r' })] })
+      renderHook(() => useHost(WORKER_URL, []))
+      await flush()
+      await advance(6_000)
+      expect(pushSyncState).not.toHaveBeenCalled()
+    })
+
+    it('pousse un changement local fait après un sondage appliqué, depuis la version reçue', async () => {
+      storeCode()
+      vi.mocked(fetchSyncState).mockResolvedValue({ version: 10, counters: [makeCounter({ id: 'r' })] })
+      vi.mocked(pushSyncState).mockResolvedValue({ accepted: true, state: { version: 11, counters: [] } })
+      const { result } = renderHook(() => useHost(WORKER_URL, []))
+      await flush()
+      const edited = [makeCounter({ id: 'r', count: 4 })]
+      act(() => result.current.setCounters(edited))
+      await advance(5_000)
+      expect(pushSyncState).toHaveBeenCalledWith(WORKER_URL, 'ABCDEFGH', { baseVersion: 10, counters: edited })
+    })
+
+    it("ignore la réponse d'un sondage arrivée après la désactivation (succès)", async () => {
+      storeCode()
+      let resolvePoll!: (v: { version: number; counters: Counter[] }) => void
+      vi.mocked(fetchSyncState).mockReturnValue(new Promise((r) => (resolvePoll = r)))
+      const onRemoteUpdate = vi.fn()
+      const { result } = renderHook(() => useHost(WORKER_URL, [], onRemoteUpdate))
+      act(() => result.current.sync.disable())
+      await act(async () => {
+        resolvePoll({ version: 9, counters: [makeCounter({ id: 'tard' })] })
+      })
+      expect(onRemoteUpdate).not.toHaveBeenCalled()
+      expect(result.current.counters).toEqual([])
+      expect(result.current.sync.status).toBe('disabled')
+    })
+
+    it("ignore l'échec d'un sondage arrivé après la désactivation", async () => {
+      storeCode()
+      let rejectPoll!: (e: unknown) => void
+      vi.mocked(fetchSyncState).mockReturnValue(new Promise((_r, rej) => (rejectPoll = rej)))
+      const { result } = renderHook(() => useHost(WORKER_URL, []))
+      act(() => result.current.sync.disable())
+      await act(async () => {
+        rejectPoll(new Error('tard'))
+      })
+      expect(result.current.sync.status).toBe('disabled')
+    })
+
+    it('ne sonde plus après la désactivation (nettoyage de l\'intervalle)', async () => {
+      storeCode()
+      vi.mocked(fetchSyncState).mockResolvedValue({ version: 0, counters: [] })
+      const { result } = renderHook(() => useHost(WORKER_URL, []))
+      await flush()
+      act(() => result.current.sync.disable())
+      vi.mocked(fetchSyncState).mockClear()
+      await advance(60_000)
+      expect(fetchSyncState).not.toHaveBeenCalled()
+    })
+
+    it('commence à sonder dès que le code est créé', async () => {
+      vi.mocked(createSyncCode).mockResolvedValue('ABCDEFGH')
+      vi.mocked(pushSyncState).mockResolvedValue({ accepted: true, state: { version: 3, counters: [] } })
+      vi.mocked(fetchSyncState).mockResolvedValue({ version: 3, counters: [] })
+      const { result } = renderHook(() => useHost(WORKER_URL, []))
+      expect(fetchSyncState).not.toHaveBeenCalled()
+      await act(async () => {
+        await result.current.sync.createCode()
+      })
+      expect(fetchSyncState).toHaveBeenCalledWith(WORKER_URL, 'ABCDEFGH')
+    })
+
+    describe('message d\'erreur', () => {
+      it('un sondage réussi efface une erreur précédente', async () => {
+        storeCode()
+        vi.mocked(fetchSyncState).mockResolvedValue({ version: 0, counters: [] })
+        vi.mocked(createSyncCode).mockRejectedValue(new Error('boom'))
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await flush()
+        await act(async () => {
+          await result.current.sync.createCode()
+        })
+        expect(result.current.sync.errorMessage).toBe('boom')
+        await advance(20_000)
+        expect(result.current.sync.errorMessage).toBeNull()
+        expect(result.current.sync.status).toBe('synced')
+      })
+
+      it('une poussée réussie efface une erreur précédente', async () => {
+        storeCode()
+        vi.mocked(fetchSyncState).mockResolvedValue({ version: 0, counters: [] })
+        vi.mocked(createSyncCode).mockRejectedValue(new Error('boom'))
+        vi.mocked(pushSyncState).mockResolvedValue({ accepted: true, state: { version: 1, counters: [] } })
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await flush()
+        await act(async () => {
+          await result.current.sync.createCode()
+        })
+        act(() => result.current.setCounters([makeCounter({ count: 2 })]))
+        await advance(5_000)
+        expect(result.current.sync.errorMessage).toBeNull()
+      })
+
+      it("« Se déconnecter » efface l'erreur", async () => {
+        vi.mocked(createSyncCode).mockRejectedValue(new Error('boom'))
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await act(async () => {
+          await result.current.sync.createCode()
+        })
+        act(() => result.current.sync.disable())
+        expect(result.current.sync.errorMessage).toBeNull()
+      })
+    })
+
+    describe('poussée', () => {
+      const prepare = async () => {
+        storeCode()
+        vi.mocked(fetchSyncState).mockResolvedValue({ version: 0, counters: [] })
+        const utils = renderHook(() => useHost(WORKER_URL, [], onRemoteUpdate))
+        await flush()
+        return utils
+      }
+      const onRemoteUpdate = vi.fn()
+      beforeEach(() => onRemoteUpdate.mockReset())
+
+      it("ne touche ni aux compteurs ni à l'écran distant quand la poussée est acceptée", async () => {
+        vi.mocked(pushSyncState).mockResolvedValue({ accepted: true, state: { version: 1, counters: [makeCounter({ id: 'serveur' })] } })
+        const { result } = await prepare()
+        const edited = [makeCounter({ count: 5 })]
+        act(() => result.current.setCounters(edited))
+        await advance(5_000)
+        expect(result.current.counters).toEqual(edited)
+        expect(onRemoteUpdate).not.toHaveBeenCalled()
+      })
+
+      it('après un refus, adopte la version serveur sans la renvoyer et repart de son numéro', async () => {
+        const server = [makeCounter({ id: 'serveur' })]
+        vi.mocked(pushSyncState)
+          .mockResolvedValueOnce({ accepted: false, state: { version: 7, counters: server } })
+          .mockResolvedValue({ accepted: true, state: { version: 8, counters: [] } })
+        const { result } = await prepare()
+        act(() => result.current.setCounters([makeCounter({ count: 5 })]))
+        await advance(5_000)
+        expect(result.current.counters).toEqual(server)
+        expect(onRemoteUpdate).toHaveBeenCalledTimes(1)
+        await advance(6_000)
+        expect(pushSyncState).toHaveBeenCalledTimes(1)
+        const edited = [makeCounter({ id: 'serveur', count: 9 })]
+        act(() => result.current.setCounters(edited))
+        await advance(5_000)
+        expect(pushSyncState).toHaveBeenLastCalledWith(WORKER_URL, 'ABCDEFGH', { baseVersion: 7, counters: edited })
+      })
+
+      it('après un refus, fonctionne sans callback onRemoteUpdate', async () => {
+        storeCode()
+        vi.mocked(fetchSyncState).mockResolvedValue({ version: 0, counters: [] })
+        vi.mocked(pushSyncState).mockResolvedValue({ accepted: false, state: { version: 7, counters: [] } })
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await flush()
+        act(() => result.current.setCounters([makeCounter({ count: 5 })]))
+        await advance(5_000)
+        expect(result.current.sync.status).toBe('synced')
+      })
+
+      it('ne pousse pas sans workerUrl, même avec un code stocké', async () => {
+        storeCode()
+        const { result } = renderHook(() => useHost(undefined, []))
+        act(() => result.current.setCounters([makeCounter({ count: 1 })]))
+        await advance(6_000)
+        expect(pushSyncState).not.toHaveBeenCalled()
+      })
+
+      it('annule la poussée en attente au démontage', async () => {
+        const { result, unmount } = await prepare()
+        act(() => result.current.setCounters([makeCounter({ count: 1 })]))
+        unmount()
+        await advance(6_000)
+        expect(pushSyncState).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('createCode', () => {
+      it('passe en « syncing » et efface l\'erreur pendant la création', async () => {
+        vi.mocked(createSyncCode).mockRejectedValueOnce(new Error('boom')).mockReturnValueOnce(never())
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await act(async () => {
+          await result.current.sync.createCode()
+        })
+        expect(result.current.sync.errorMessage).toBe('boom')
+        act(() => {
+          void result.current.sync.createCode()
+        })
+        expect(result.current.sync.status).toBe('syncing')
+        expect(result.current.sync.errorMessage).toBeNull()
+      })
+
+      it('retient la version du serveur et se déclare synchronisé', async () => {
+        vi.mocked(createSyncCode).mockResolvedValue('ABCDEFGH')
+        vi.mocked(pushSyncState).mockResolvedValue({ accepted: true, state: { version: 4, counters: [] } })
+        vi.mocked(fetchSyncState).mockReturnValue(never())
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await act(async () => {
+          await result.current.sync.createCode()
+        })
+        expect(result.current.sync.status).toBe('synced')
+        expect(window.localStorage.getItem('+1.sync.version.v1')).toBe('4')
+      })
+
+      it("passe en erreur si la création échoue", async () => {
+        vi.mocked(createSyncCode).mockRejectedValue(new Error('boom'))
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await act(async () => {
+          await result.current.sync.createCode()
+        })
+        expect(result.current.sync.status).toBe('error')
+      })
+    })
+
+    describe('joinCode', () => {
+      const remote = [makeCounter({ id: 'distant' })]
+
+      it('sans workerUrl : renvoie une erreur sans rien interroger ni changer d\'état', async () => {
+        const { result } = renderHook(() => useHost(undefined, []))
+        let outcome: string | undefined
+        await act(async () => {
+          outcome = await result.current.sync.joinCode('ABCDEFGH')
+        })
+        expect(outcome).toBe('error')
+        expect(fetchSyncState).not.toHaveBeenCalled()
+        expect(result.current.sync.status).toBe('disabled')
+      })
+
+      it('passe en « syncing » et efface l\'erreur pendant la jonction', async () => {
+        vi.mocked(createSyncCode).mockRejectedValue(new Error('boom'))
+        vi.mocked(fetchSyncState).mockReturnValue(never())
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await act(async () => {
+          await result.current.sync.createCode()
+        })
+        act(() => {
+          void result.current.sync.joinCode('ABCDEFGH')
+        })
+        expect(result.current.sync.status).toBe('syncing')
+        expect(result.current.sync.errorMessage).toBeNull()
+      })
+
+      it('remplacement : retient la version distante, se déclare synchronisé et ne renvoie rien', async () => {
+        vi.mocked(fetchSyncState).mockResolvedValueOnce({ version: 50, counters: remote }).mockReturnValue(never())
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await act(async () => {
+          await result.current.sync.joinCode('ABCDEFGH')
+        })
+        expect(result.current.counters).toEqual(remote)
+        expect(result.current.sync.status).toBe('synced')
+        expect(window.localStorage.getItem('+1.sync.version.v1')).toBe('50')
+        await advance(6_000)
+        expect(pushSyncState).not.toHaveBeenCalled()
+      })
+
+      it('demande confirmation avec le nombre de compteurs actuels', async () => {
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+        vi.mocked(fetchSyncState).mockResolvedValueOnce({ version: 50, counters: remote }).mockReturnValue(never())
+        const { result } = renderHook(() => useHost(WORKER_URL, [makeCounter({ id: 'a' }), makeCounter({ id: 'b' })]))
+        await act(async () => {
+          await result.current.sync.joinCode('ABCDEFGH')
+        })
+        expect(confirmSpy).toHaveBeenCalledWith(
+          'Remplacer tes 2 compteur(s) actuel(s) par ceux du code ?\n\nAnnuler pour les ajouter à la suite.'
+        )
+      })
+
+      it('fusion acceptée : retient la version, applique la fusion sans la renvoyer deux fois', async () => {
+        vi.spyOn(window, 'confirm').mockReturnValue(false)
+        const local = makeCounter({ id: 'local' })
+        vi.mocked(fetchSyncState).mockResolvedValueOnce({ version: 50, counters: remote }).mockReturnValue(never())
+        vi.mocked(pushSyncState).mockResolvedValue({ accepted: true, state: { version: 51, counters: [] } })
+        const { result } = renderHook(() => useHost(WORKER_URL, [local]))
+        await act(async () => {
+          await result.current.sync.joinCode('ABCDEFGH')
+        })
+        expect(result.current.counters).toEqual([local, ...remote])
+        expect(window.localStorage.getItem('+1.sync.version.v1')).toBe('51')
+        await advance(6_000)
+        expect(pushSyncState).toHaveBeenCalledTimes(1)
+      })
+
+      it('fusion refusée : adopte le serveur sans le renvoyer', async () => {
+        vi.spyOn(window, 'confirm').mockReturnValue(false)
+        const server = [makeCounter({ id: 'serveur' })]
+        vi.mocked(fetchSyncState).mockResolvedValueOnce({ version: 50, counters: remote }).mockReturnValue(never())
+        vi.mocked(pushSyncState).mockResolvedValue({ accepted: false, state: { version: 52, counters: server } })
+        const { result } = renderHook(() => useHost(WORKER_URL, [makeCounter({ id: 'local' })]))
+        await act(async () => {
+          await result.current.sync.joinCode('ABCDEFGH')
+        })
+        expect(result.current.counters).toEqual(server)
+        expect(window.localStorage.getItem('+1.sync.version.v1')).toBe('52')
+        await advance(6_000)
+        expect(pushSyncState).toHaveBeenCalledTimes(1)
+      })
+
+      it('« not-found » et erreurs passent le statut en erreur', async () => {
+        vi.mocked(fetchSyncState).mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('boom'))
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await act(async () => {
+          await result.current.sync.joinCode('ABCDEFGH')
+        })
+        expect(result.current.sync.status).toBe('error')
+        await act(async () => {
+          await result.current.sync.joinCode('ABCDEFGH')
+        })
+        expect(result.current.sync.status).toBe('error')
+        expect(result.current.sync.errorMessage).toBe('boom')
+      })
+    })
+
+    describe('disable', () => {
+      it('annule la poussée en attente et remet la version à zéro', async () => {
+        storeCode()
+        window.localStorage.setItem('+1.sync.version.v1', '5')
+        vi.mocked(fetchSyncState).mockResolvedValue({ version: 5, counters: [] })
+        const { result } = renderHook(() => useHost(WORKER_URL, []))
+        await flush()
+        act(() => result.current.setCounters([makeCounter({ count: 1 })]))
+        act(() => result.current.sync.disable())
+        await advance(6_000)
+        expect(pushSyncState).not.toHaveBeenCalled()
+        expect(window.localStorage.getItem('+1.sync.version.v1')).toBe('0')
+      })
     })
   })
 })
