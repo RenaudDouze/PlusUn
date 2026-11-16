@@ -1,0 +1,56 @@
+name: Montée de version de Node
+
+# Dependabot ne sait pas monter la version de Node écrite dans les workflows, .nvmrc et
+# package.json. Ce workflow ne change QUE des numéros de version : si la CI est rouge sur
+# la PR, il y a du travail manuel (UPD-01, UPD-03).
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    name: Node LTS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Jeton dédié (UPD-02) : une PR ouverte avec GITHUB_TOKEN ne déclenche pas la CI.
+          token: ${{ secrets.UPDATE_TOKEN }}
+      - name: Version LTS courante
+        id: lts
+        run: |
+          major=$(curl -fsS https://nodejs.org/dist/index.json | jq -r '[.[] | select(.lts != false)][0].version' | sed 's/^v//; s/\..*//')
+          current=$(grep -rhoE 'node-version: [0-9]+' .github/workflows | head -1 | grep -oE '[0-9]+')
+          echo "major=$major" >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+      - name: Réécrire les numéros de version
+        if: steps.lts.outputs.major != steps.lts.outputs.current
+        env:
+          NEW: ${{ steps.lts.outputs.major }}
+          OLD: ${{ steps.lts.outputs.current }}
+        run: |
+          sed -i -E "s/(node-version: )$OLD\b/\1$NEW/" .github/workflows/*.yml
+          [ -f .nvmrc ] && echo "$NEW" > .nvmrc
+          [ -f package.json ] && sed -i -E "s/(\"node\": \"[^0-9]*)$OLD/\1$NEW/" package.json
+          true
+      - name: Ouvrir ou mettre à jour la PR
+        if: steps.lts.outputs.major != steps.lts.outputs.current
+        env:
+          GH_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+          NEW: ${{ steps.lts.outputs.major }}
+        run: |
+          branch=bump-node-version
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git commit -am "build(deps): bump Node to $NEW"
+          git push --force origin "$branch"
+          if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')" ]; then
+            gh pr create --head "$branch" --title "build(deps): bump Node to $NEW" \
+              --body "Change uniquement des numéros de version. Si la CI est rouge, la montée demande un travail manuel (dépendances natives, API retirées)."
+          fi
