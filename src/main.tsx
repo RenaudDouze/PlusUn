@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { MotionConfig } from 'framer-motion'
 import './index.css'
 import App from './App.tsx'
+import { PwaBanners } from './components/PwaBanners.tsx'
+import { registerSW } from 'virtual:pwa-register'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 
 // Style en dur (pas de classes de App.css) : ce filet doit rester lisible
@@ -55,6 +57,7 @@ createRoot(document.getElementById('root')!).render(
           système "mouvement réduit" (odomètre, rebond au clic, glisser...). */}
       <MotionConfig reducedMotion="user">
         <App />
+        <PwaBanners register={registerSW} />
       </MotionConfig>
     </ErrorBoundary>
   </StrictMode>,
