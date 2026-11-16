@@ -50,13 +50,17 @@ test.describe('PWA et fonctionnement hors-ligne', () => {
     })
     await page.waitForTimeout(500)
 
+    await expect(page.locator('#offline-banner')).toHaveCount(0)
     await context.setOffline(true)
     await page.reload()
 
     await expect(page.getByRole('heading', { name: 'PlusUn', exact: true })).toBeVisible()
     await expect(page.locator('.counter-value')).toHaveText('1')
+    // L'interface dit qu'elle est hors ligne (PWA-05).
+    await expect(page.locator('#offline-banner')).toContainText('Hors ligne')
 
     await context.setOffline(false)
+    await expect(page.locator('#offline-banner')).toHaveCount(0)
   })
 
   test('les compteurs restent disponibles hors-ligne (localStorage local)', async ({ page, context }) => {
