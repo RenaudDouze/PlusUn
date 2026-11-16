@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint --deny-warnings",
+    "lint": "oxlint --deny-warnings && depcruise src worker",
     "typecheck": "tsc -b",
     "preview": "vite preview",
     "test": "vitest run",
@@ -23,14 +23,14 @@
     "lz-string": "^1.5.0",
     "qrcode": "^1.5.4",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "vite-plugin-pwa": "^2.0.0"
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",
     "@stryker-mutator/core": "^10.1.1",
     "@stryker-mutator/typescript-checker": "^10.1.1",
     "@stryker-mutator/vitest-runner": "^10.1.1",
+    "@swc/core": "^1.16.22",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.10",
@@ -40,12 +40,14 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "@vitest/coverage-v8": "^5.1.0",
+    "dependency-cruiser": "^18.7.2",
     "jsdom": "^31.0.0",
     "oxlint": "^1.93.0",
     "playwright": "^1.64.1",
     "pngjs": "^7.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
+    "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.0.5"
   }
 }
