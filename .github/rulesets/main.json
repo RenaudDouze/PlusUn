@@ -76,6 +76,14 @@
           {
             "context": "Analyse",
             "integration_id": 15368
+          },
+          {
+            "context": "Titre de PR conventionnel",
+            "integration_id": 15368
+          },
+          {
+            "context": "Commits conventionnels",
+            "integration_id": 15368
           }
         ]
       }
