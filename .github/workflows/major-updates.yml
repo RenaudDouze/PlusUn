@@ -1,0 +1,44 @@
+name: Montées majeures npm
+
+# Dependabot groupe ou rate-limite les majeures. Ici : une PR par paquet, qui ne change que
+# le numéro de version (UPD-04). La CI dit si la montée passe ; sinon, travail manuel.
+on:
+  schedule:
+    - cron: "0 5 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  majors:
+    name: Majeures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          token: ${{ secrets.UPDATE_TOKEN }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      - name: Une PR par paquet en retard d'une majeure
+        env:
+          GH_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npx --yes npm@11 ci
+          npm outdated --json > outdated.json || true   # code 1 quand il y a du retard
+          jq -r 'to_entries[] | select((.value.current // "0" | split(".")[0]) != (.value.latest | split(".")[0])) | "\(.key) \(.value.latest)"' outdated.json |
+          while read -r pkg latest; do
+            branch="deps/major-$(echo "$pkg" | tr '/@' '--')"
+            git checkout -q main && git checkout -q -B "$branch"
+            npx --yes npm@11 install "$pkg@$latest"
+            git commit -qam "build(deps): bump $pkg to $latest"
+            git push -q --force origin "$branch"
+            if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')" ]; then
+              gh pr create --head "$branch" --title "build(deps): bump $pkg to $latest" \
+                --body "Change uniquement le numéro de version. Si la CI est rouge, la montée demande un travail manuel."
+            fi
+          done
