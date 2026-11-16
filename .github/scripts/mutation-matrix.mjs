@@ -13,8 +13,12 @@ for (const [file, tests] of Object.entries(targets)) {
   groups.set(key, [...(groups.get(key) || []), file]);
 }
 // Le libellé sert de nom d'artefact : ni `/` ni `:` n'y sont permis (`:` des
-// plages devient `@`). Les fichiers du Worker, hors plages, partagent le nom `worker`.
-const label = (files) => (files.every((f) => f.startsWith('worker/') && !f.includes(':'))
+// plages devient `@`). Le groupe des fichiers du Worker (hors plages) s'appelle
+// `worker` s'il est unique ; sinon chaque groupe garde son nom complet, pour
+// qu'aucun nom d'artefact ne soit en double.
+const isWorker = (files) => files.every((f) => f.startsWith('worker/') && !f.includes(':'));
+const workerGroups = [...groups.values()].filter(isWorker).length;
+const label = (files) => (workerGroups === 1 && isWorker(files)
   ? 'worker'
   : files.map((f) => f.replace(/^(src|js)\//, '').replace(/\.[jt]sx?$/, '').replaceAll('/', '-').replace(':', '@')).join('+'));
 const include = [...groups.values()].map((files) => ({ name: label(files), mutate: files.join(',') }));
