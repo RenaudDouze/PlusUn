@@ -109,3 +109,8 @@ The 8-character code is a shared secret, not per-device authentication — anyon
 - `doc/` holds the stable truth for humans and agents: `architecture.md` (executable dependency rules), `codage.md` (conventions), `improvement.md` (backlog).
 - `npm run lint` also runs dependency-cruiser (`.dependency-cruiser.cjs`): no cycles, no orphan files, one-way layer dependencies. Document an exception next to the rule, never loosen it globally.
 - Commits follow Conventional Commits (`type(scope): subject`); enable the hook with `git config core.hooksPath .githooks`. The version is derived from the commits by semantic-release (`release.yml`): never edit a version number or a changelog by hand.
+
+## PWA: updates and offline
+
+- `registerType: 'prompt'` (`vite.config.ts`): a new version is announced, never applied silently. `src/updatePrompt.ts` (pure, dependencies injected) is wired to `registerSW` by `<PwaBanners register={registerSW} />` in `src/main.tsx`; the page reloads only when the user clicks "Recharger".
+- `PwaBanners` also shows an offline banner while `navigator.onLine` is false; `e2e/pwa-offline.spec.ts` checks it after an offline reload (Playwright serves the production build, where the service worker exists).
