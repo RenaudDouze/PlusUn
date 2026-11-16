@@ -19,6 +19,8 @@ export const targets = {
   'src/archiveStats.ts': ['src/archiveStats.test.ts'],
   'src/components/CounterActionsPanel.tsx': ['src/components/CounterActionsPanel.test.tsx'],
   'src/components/ErrorBoundary.tsx': ['src/components/ErrorBoundary.test.tsx'],
+  'src/components/PwaBanners.tsx': ['src/components/PwaBanners.test.tsx'],
+  'src/updatePrompt.ts': ['src/updatePrompt.test.ts'],
   'src/components/CounterSettingsPanel.tsx': ['src/components/CounterSettingsPanel.test.tsx'],
   'src/components/CounterBehaviorSettingsPanel.tsx': ['src/components/CounterBehaviorSettingsPanel.test.tsx'],
   'src/components/SyncPanel.tsx': ['src/components/SyncPanel.test.tsx'],
