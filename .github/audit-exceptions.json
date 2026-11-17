@@ -1,0 +1,7 @@
+[
+  {
+    "id": "GHSA-fc5q-39xc-vjpf",
+    "reason": "ReDoS dans picomatch (dépendance de développement transitive), aucune version corrigée publiée ; retirer dès qu'un correctif sort",
+    "expires": "2026-12-17"
+  }
+]

@@ -23,10 +23,10 @@ jobs:
       - name: Production (.)
         run: npm audit --omit=dev --audit-level=high
       - name: Production + développement (.)
-        run: npm audit --audit-level=high
+        run: node .github/scripts/audit-check.mjs --level=high
       - name: Production (worker)
         run: npm audit --omit=dev --audit-level=high
         working-directory: worker
       - name: Production + développement (worker)
-        run: npm audit --audit-level=high
+        run: node ../.github/scripts/audit-check.mjs --level=high
         working-directory: worker
