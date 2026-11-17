@@ -27,6 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0 # tags complets : version affichée (VER-09)
           # Le SHA exact qui a passé la CI, pas juste « la HEAD actuelle de
           # main » qui a pu bouger entre-temps si des pushes s'enchaînent.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}

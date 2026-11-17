@@ -1,25 +1,14 @@
-import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
-
-// Identifie précisément le code déployé (utile pour confirmer qu'un
-// déploiement a bien pris effet, ou pour référencer une version exacte dans
-// un rapport de bug). Un hash de commit ne demande aucune discipline de mise
-// à jour manuelle, contrairement à un numéro de version dans package.json.
-function getBuildVersion(): string {
-  try {
-    return execSync('git rev-parse --short HEAD').toString().trim()
-  } catch {
-    return 'dev'
-  }
-}
+import { appVersion } from './.github/scripts/app-version.mjs'
 
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
   define: {
-    __APP_VERSION__: JSON.stringify(getBuildVersion()),
+    // Dernier tag v* (VER-09) ; le checkout de CI doit avoir l'historique (fetch-depth: 0).
+    __APP_VERSION__: JSON.stringify(appVersion()),
   },
   plugins: [
     react(),

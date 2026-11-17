@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  // Ne dépend pas du hash de commit réel (voir vite.config.ts) : les tests
+  // Ne dépend pas des tags git (voir vite.config.ts) : les tests
   // n'ont besoin que d'une valeur stable pour la variable globale.
   define: {
     __APP_VERSION__: JSON.stringify('test'),
