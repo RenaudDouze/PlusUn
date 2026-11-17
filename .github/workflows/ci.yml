@@ -5,12 +5,16 @@ on:
   push:
     branches:
       - main
+  # Contrôle complet la nuit : la mutation de tous les modules, que les PR ne refont pas (MUT-10).
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
@@ -79,19 +83,30 @@ jobs:
     name: Mutation testing — plan
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
+      matrix: ${{ steps.select.outputs.matrix }}
+      count: ${{ steps.select.outputs.count }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
       # Un job par module, d'après les cibles de stryker.config.mjs.
       - id: plan
         run: node .github/scripts/mutation-matrix.mjs
+      # PR : seulement les modules touchés ; nuit : tous ; push sur main : aucun (MUT-10).
+      - id: select
+        run: node .github/scripts/mutation-select.mjs
+        env:
+          MATRIX: ${{ steps.plan.outputs.matrix }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
 
   mutation-testing-module:
     name: Mutation testing — ${{ matrix.name }}
     needs: mutation-testing-plan
+    if: needs.mutation-testing-plan.outputs.count != '0'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.mutation-testing-plan.outputs.matrix) }}
@@ -118,15 +133,17 @@ jobs:
   # de branche, quel que soit le nombre de modules.
   mutation-testing:
     name: Mutation testing (logique pure)
-    needs: mutation-testing-module
+    needs: [mutation-testing-plan, mutation-testing-module]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Tous les modules à 100 %
         env:
+          PLAN: ${{ needs.mutation-testing-plan.result }}
           RESULT: ${{ needs.mutation-testing-module.result }}
         run: |
-          if [ "$RESULT" != "success" ]; then
+          # « skipped » : aucun module concerné par la PR (ou push sur main).
+          if [ "$PLAN" != "success" ] || { [ "$RESULT" != "success" ] && [ "$RESULT" != "skipped" ]; }; then
             echo "::error::Mutation testing : au moins un module sous 100 % ($RESULT)."
             exit 1
           fi
@@ -184,6 +201,9 @@ jobs:
   build:
     name: Build de production
     needs: [lint, typecheck, unit-tests, e2e-tests, mutation-testing, worker-tests, audit]
+    # Sans cette condition, `success()` implicite exige aussi que les modules de mutation (ancêtres,
+    # « skipped » quand aucun n'est concerné) aient réussi : le build serait sauté (MUT-10).
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
