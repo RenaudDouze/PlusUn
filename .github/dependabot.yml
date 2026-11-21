@@ -1,36 +1,29 @@
 version: 2
+
+# Une seule PR Dependabot par semaine pour tout le dépôt (npm racine, npm /worker,
+# github-actions). Les montées majeures passent par major-updates.yml (UPD-04).
+# Dans une entrée multi-écosystème, `exclude-patterns` et `commit-message` sont refusés :
+# `commit-message` se pose sur le groupe, donc un seul préfixe pour toute la PR.
+multi-ecosystem-groups:
+  weekly:
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      include: scope
+
 updates:
   - package-ecosystem: npm
     directory: /
-    schedule:
-      interval: weekly
-    groups:
-      dev-dependencies:
-        dependency-type: development
-    commit-message:
-      prefix: build
-      prefix-development: chore
-      include: scope
-    open-pull-requests-limit: 10
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
 
   - package-ecosystem: npm
     directory: /worker
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: build
-      prefix-development: chore
-      include: scope
-    open-pull-requests-limit: 10
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
 
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-    groups:
-      github-actions:
-        patterns: ["*"]
-    commit-message:
-      prefix: ci
-      include: scope
-    open-pull-requests-limit: 10
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
