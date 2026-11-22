@@ -140,3 +140,15 @@ jour la protection de branche en même temps.
 - `.github/workflows/worker-deploy.yml` déploie le worker de synchro Cloudflare à
   chaque changement sous `worker/` poussé sur `main` (voir `worker/README.md` pour
   la configuration initiale et les secrets requis).
+
+## Domaine personnalisé
+
+L'app est servie sur `https://plusun.douzeensemble.app` : `public/CNAME` est
+copié tel quel à la racine du build et fixe le domaine de GitHub Pages.
+`pages.yml` n'a pas besoin d'être modifié (`base: './'` dans `vite.config.ts`).
+
+Côté Worker de synchro, `ALLOWED_ORIGIN` (`worker/wrangler.toml`) doit
+correspondre à cette origine, sinon le navigateur bloque les appels (CORS).
+Un changement sous `worker/**` redéploie le Worker au merge : l'ancienne
+origine perd alors la synchronisation. Les données locales ne sont pas
+touchées et ont déjà été poussées.
