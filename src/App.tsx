@@ -136,6 +136,7 @@ export default function App() {
   // rouvrirait l'édition de façon inattendue.
   const [autoEditId, setAutoEditId] = useState<string | null>(null)
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- remise à zéro volontaire après le montage de la carte
     setAutoEditId(null)
   }, [autoEditId])
 
@@ -265,6 +266,8 @@ export default function App() {
     wasFocusModeRef.current = focusMode
   }, [focusMode])
 
+  const [deviceFullscreen, setDeviceFullscreen] = useState(false)
+
   const exitFocusMode = () => {
     setFocusMode(false)
     // Un seul bouton de sortie visible dans cet état : il ramène à
@@ -288,8 +291,6 @@ export default function App() {
   // vraiment tout l'écran (masque la barre d'adresse/les onglets), pour qui
   // le souhaite explicitement (ex : poser la tablette en écran dédié). Les
   // deux modes sont combinables mais indépendants l'un de l'autre.
-  const [deviceFullscreen, setDeviceFullscreen] = useState(false)
-
   useEffect(() => {
     if (deviceFullscreen) {
       document.documentElement.requestFullscreen?.().catch(() => {})
@@ -406,6 +407,7 @@ export default function App() {
       url.searchParams.delete('action')
       window.history.replaceState({}, '', url.toString())
 
+      // oxlint-disable-next-line react/set-state-in-effect -- action lue une seule fois dans l'URL au montage
       if (action === 'new') addCounter()
       if (action === 'sync') setSyncOpen(true)
     },

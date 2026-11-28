@@ -30,13 +30,13 @@ describe('useHoldToRepeat', () => {
     expect(bump).toHaveBeenCalledTimes(3)
   })
 
-  it('marque longPressFired une fois la rafale démarrée', () => {
+  it('marque longPressFiredRef une fois la rafale démarrée', () => {
     const bump = vi.fn()
     const { result } = renderHook(() => useHoldToRepeat(bump))
-    expect(result.current.longPressFired.current).toBe(false)
+    expect(result.current.longPressFiredRef.current).toBe(false)
     act(() => result.current.startHold(1))
     act(() => vi.advanceTimersByTime(350))
-    expect(result.current.longPressFired.current).toBe(true)
+    expect(result.current.longPressFiredRef.current).toBe(true)
   })
 
   it('stopHold arrête la répétition et empêche tout futur déclenchement', () => {
@@ -50,14 +50,14 @@ describe('useHoldToRepeat', () => {
     expect(bump).toHaveBeenCalledTimes(1)
   })
 
-  it('un nouvel appel à startHold réinitialise longPressFired et le minuteur précédent', () => {
+  it('un nouvel appel à startHold réinitialise longPressFiredRef et le minuteur précédent', () => {
     const bump = vi.fn()
     const { result } = renderHook(() => useHoldToRepeat(bump))
     act(() => result.current.startHold(1))
     act(() => vi.advanceTimersByTime(350))
-    expect(result.current.longPressFired.current).toBe(true)
+    expect(result.current.longPressFiredRef.current).toBe(true)
     act(() => result.current.startHold(-1))
-    expect(result.current.longPressFired.current).toBe(false)
+    expect(result.current.longPressFiredRef.current).toBe(false)
     act(() => vi.advanceTimersByTime(350))
     expect(bump).toHaveBeenLastCalledWith(-1)
   })
