@@ -119,14 +119,14 @@ export function CounterCard({
     onChange(sign * (counter.behavior.step ?? 1))
   }
 
-  const { startHold, stopHold, longPressFired } = useHoldToRepeat(bump)
+  const { startHold, stopHold, longPressFiredRef } = useHoldToRepeat(bump)
   // Partagé entre le relâchement souris/tactile (onClick, après un
   // pointerup) et le relâchement clavier (onKeyUp) : un tap bref applique
   // l'incrément, un relâchement qui suit une rafale ne l'applique pas une
   // fois de plus (déjà appliquée en boucle par useHoldToRepeat).
   const handleRelease = (sign: 1 | -1) => {
-    if (longPressFired.current) {
-      longPressFired.current = false
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false
       return
     }
     bump(sign)

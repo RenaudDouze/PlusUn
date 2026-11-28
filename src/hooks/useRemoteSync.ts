@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocalStorage } from './useLocalStorage'
 import { createSyncCode, fetchSyncState, isValidSyncCode, normalizeSyncCode, pushSyncState } from '../remoteSync'
 import type { Counter } from '../types'
@@ -81,9 +81,13 @@ export function useRemoteSync(
   const isFirstPushEffectRunRef = useRef(true)
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const countersRef = useRef(counters)
-  countersRef.current = counters
   const onRemoteUpdateRef = useRef(onRemoteUpdate)
-  onRemoteUpdateRef.current = onRemoteUpdate
+  // Mises à jour après le rendu (jamais pendant), avant les effets ci-dessous
+  // et les callbacks différés qui les lisent.
+  useLayoutEffect(() => {
+    countersRef.current = counters
+    onRemoteUpdateRef.current = onRemoteUpdate
+  })
 
   useEffect(() => {
     if (!workerUrl || !code) return
